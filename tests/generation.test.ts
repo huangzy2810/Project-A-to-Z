@@ -260,3 +260,55 @@ test("same-origin validation uses the incoming Host when Next binds to 0.0.0.0",
   });
   assert.equal((await handle(req)).status, 503);
 });
+
+test("upstream model errors and nested network causes have safe actionable codes", async () => {
+  const original = console.error;
+  const logs: unknown[][] = [];
+  console.error = (...args) => {
+    logs.push(args);
+  };
+  try {
+    const unavailable = createOpenAIProvider("test-only-credential", async () =>
+      Response.json(
+        {
+          error: {
+            message: "private provider detail",
+            type: "invalid_request_error",
+            code: "model_not_found",
+          },
+        },
+        { status: 404 },
+      ),
+    );
+    await assert.rejects(
+      unavailable.generate("private scene", [], new AbortController().signal),
+      (e) =>
+        e instanceof ImageGenerationError &&
+        /OPENAI_HTTP_404/.test(e.message) &&
+        /model is unavailable/.test(e.message),
+    );
+    const disconnected = createOpenAIProvider(
+      "test-only-credential",
+      async () => {
+        throw new TypeError("private transport detail", {
+          cause: Object.assign(new Error("private cause"), {
+            code: "ECONNRESET",
+          }),
+        });
+      },
+    );
+    await assert.rejects(
+      disconnected.generate("private scene", [], new AbortController().signal),
+      (e) => e instanceof ImageGenerationError && /ECONNRESET/.test(e.message),
+    );
+    const output = JSON.stringify(logs);
+    assert.doesNotMatch(
+      output,
+      /test-only-credential|private provider|private transport|private scene|private cause/,
+    );
+    assert.match(output, /ECONNRESET/);
+    assert.match(output, /OPENAI_HTTP_404/);
+  } finally {
+    console.error = original;
+  }
+});

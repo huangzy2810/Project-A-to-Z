@@ -21,25 +21,60 @@ let dispatcher: EnvHttpProxyAgent | undefined;
 export function imageApiKey() {
   return process.env.IMAGE_API_KEY || process.env.OPENAI_API_KEY;
 }
+const networkCodes = new Set([
+  "ENOTFOUND",
+  "EAI_AGAIN",
+  "ECONNRESET",
+  "ECONNREFUSED",
+  "ETIMEDOUT",
+  "CERT_HAS_EXPIRED",
+  "DEPTH_ZERO_SELF_SIGNED_CERT",
+  "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+  "UNABLE_TO_GET_ISSUER_CERT_LOCALLY",
+  "UND_ERR_CONNECT_TIMEOUT",
+  "UND_ERR_HEADERS_TIMEOUT",
+  "UND_ERR_BODY_TIMEOUT",
+  "UND_ERR_SOCKET",
+]);
+function diagnosticCode(error: unknown): string {
+  let cause = error;
+  for (let i = 0; i < 5 && cause && typeof cause === "object"; i++) {
+    const detail = cause as { code?: unknown; cause?: unknown };
+    if (typeof detail.code === "string" && networkCodes.has(detail.code))
+      return detail.code;
+    cause = detail.cause;
+  }
+  if (error instanceof OpenAI.APIError && error.status)
+    return `OPENAI_HTTP_${error.status}`;
+  return "IMAGE_TRANSPORT_ERROR";
+}
 export function createOpenAIProvider(
   apiKey: string,
   transport?: typeof globalThis.fetch,
 ): ImageProvider {
-  dispatcher ??= new EnvHttpProxyAgent();
+  const useProxy = Boolean(
+    process.env.HTTPS_PROXY ||
+    process.env.HTTP_PROXY ||
+    process.env.https_proxy ||
+    process.env.http_proxy,
+  );
+  if (useProxy && !transport) dispatcher ??= new EnvHttpProxyAgent();
   const client = new OpenAI({
     apiKey,
     timeout: 180_000,
     maxRetries: 0,
     fetch:
       transport ||
-      (((
-        input: Parameters<typeof globalThis.fetch>[0],
-        init?: Parameters<typeof globalThis.fetch>[1],
-      ) =>
-        proxyFetch(
-          input as string,
-          { ...init, dispatcher } as Parameters<typeof proxyFetch>[1],
-        )) as unknown as typeof globalThis.fetch),
+      (!useProxy
+        ? globalThis.fetch
+        : (((
+            input: Parameters<typeof globalThis.fetch>[0],
+            init?: Parameters<typeof globalThis.fetch>[1],
+          ) =>
+            proxyFetch(
+              input as string,
+              { ...init, dispatcher } as Parameters<typeof proxyFetch>[1],
+            )) as unknown as typeof globalThis.fetch)),
   });
   return {
     async generate(prompt, references, signal) {
@@ -81,34 +116,57 @@ export function createOpenAIProvider(
         return { bytes, model: IMAGE_MODEL };
       } catch (error) {
         if (error instanceof ImageGenerationError) throw error;
+        const code = diagnosticCode(error);
+        // Log only fixed diagnostic codes/statuses, never upstream messages, keys, headers or photos.
+        console.error("[image-generation]", {
+          code,
+          status: error instanceof OpenAI.APIError ? error.status : undefined,
+        });
+        const failure = (status: number, message: string) =>
+          new ImageGenerationError(status, `${message} (Code: ${code})`);
         if (error instanceof OpenAI.APIError) {
+          if (error.status === 404)
+            throw failure(
+              503,
+              "The configured image model is unavailable to this API project. Check image-model access.",
+            );
+          if (error.status === 402)
+            throw failure(
+              503,
+              "OpenAI requires API billing for this image request. Check the API project’s billing.",
+            );
+          if (error.status && error.status >= 500)
+            throw failure(
+              502,
+              "OpenAI returned a server error. Please try again later. Your previous images are safe.",
+            );
           if (error.status === 401)
-            throw new ImageGenerationError(
+            throw failure(
               503,
               "The image API credential needs updating in server settings. Your previous images are safe.",
             );
           if (error.status === 403)
-            throw new ImageGenerationError(
+            throw failure(
               503,
               "Image generation access is unavailable. Check API model access and any organization verification requirements.",
             );
           if (error.status === 429)
-            throw new ImageGenerationError(
+            throw failure(
               429,
               "Image generation is busy or the API quota has been reached. Wait a moment or check your API billing before trying again.",
             );
           if (error.status === 400)
-            throw new ImageGenerationError(
+            throw failure(
               422,
               "The image service could not accept this scene or its references. Try a simpler description and valid reference photos.",
             );
         }
         if (signal.aborted || error instanceof OpenAI.APIConnectionTimeoutError)
-          throw new ImageGenerationError(
+          throw failure(
             504,
             "Image generation took too long. Your previous images are safe. Please try again.",
           );
-        throw new ImageGenerationError(
+        throw failure(
           502,
           "Could not reach the image service. Please try again. Your previous images are safe.",
         );
