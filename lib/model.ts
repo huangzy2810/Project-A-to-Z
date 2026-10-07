@@ -11,6 +11,7 @@ export interface Typography {
   defaultTextPosition: Position;
 }
 export interface Character {
+  generationModel?: string;
   id: string;
   name: string;
   relationship: string;
@@ -22,6 +23,7 @@ export interface Character {
   status: Status;
 }
 export interface VisualStyle {
+  generationModel?: string;
   description: string;
   referenceImages: string[];
   generatedStylePrompt: string;
@@ -39,6 +41,8 @@ export interface GenerationRecipe {
   kind?: "character" | "style" | "scene";
 }
 export interface IllustrationVersion {
+  width?: number;
+  height?: number;
   recipe?: GenerationRecipe;
   id: string;
   image: string;
@@ -75,6 +79,7 @@ export interface Chapter {
   pages: StoryPage[];
 }
 export interface BookProject {
+  generationMode?: "auto" | "mock";
   schemaVersion: 1;
   id: string;
   title: string;

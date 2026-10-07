@@ -1146,3 +1146,24 @@ footer > span {
 [hidden] {
   display: none !important;
 }
+
+.generation-notice {
+  background: #eef1e7;
+  border-left: 2px solid #8ea184;
+  padding: 12px 14px;
+  margin: 10px 0 15px;
+  font-size: 11px;
+}
+.generation-notice strong {
+  font-weight: 600;
+}
+.generation-notice p {
+  color: #6d7566;
+  margin: 6px 0 0;
+  font-size: 10px;
+}
+.generation-notice > span {
+  display: block;
+  margin-top: 8px;
+  color: #4f6c55;
+}

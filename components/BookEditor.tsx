@@ -16,7 +16,12 @@ import {
   PROJECT_KEY,
   saveProject,
 } from "@/lib/storage";
-import { mockIllustrationService, GenerationInput } from "@/lib/generation";
+import {
+  illustrationService,
+  generationStatus,
+  GenerationInput,
+  GenerationStatus,
+} from "@/lib/generation";
 import { AssetImage, BookPage, orderedPages, RenderPage } from "./BookPage";
 import DropZone from "./DropZone";
 import { exportPdf } from "@/lib/pdf";
@@ -51,6 +56,10 @@ function Field({
 export default function BookEditor() {
   const [project, setProject] = useState<BookProject | null>(null);
   const [ready, setReady] = useState(false);
+  const [generationInfo, setGenerationInfo] = useState<GenerationStatus | null>(
+    null,
+  );
+  const [generationSettingsError, setGenerationSettingsError] = useState(false);
   const [step, setStep] = useState(0);
   const [drawer, setDrawer] = useState(false);
   const [settings, setSettings] = useState(false);
@@ -67,6 +76,15 @@ export default function BookEditor() {
   const generationRef = useRef(false);
   const latestProject = useRef<BookProject | null>(null);
   latestProject.current = project;
+  useEffect(() => {
+    const controller = new AbortController();
+    generationStatus(controller.signal)
+      .then(setGenerationInfo)
+      .catch(() => {
+        if (!controller.signal.aborted) setGenerationSettingsError(true);
+      });
+    return () => controller.abort();
+  }, []);
   useEffect(() => {
     try {
       setProject(loadProject() || createProject());
@@ -178,6 +196,18 @@ export default function BookEditor() {
       </main>
     );
   const p = project;
+  const sampleMode =
+    p.generationMode === "mock" || generationInfo?.available === false;
+  const generationLabel =
+    p.generationMode === "mock"
+      ? "Sample artwork"
+      : generationSettingsError
+        ? "Illustration settings unavailable"
+        : !generationInfo
+          ? "Checking illustration settings…"
+          : generationInfo.available
+            ? "AI illustrations"
+            : "Sample artwork · AI not configured";
   const character = p.characters[characterIndex] || p.characters[0];
   const chapter = p.chapters[chapterIndex] || p.chapters[0];
   const page = chapter?.pages[pageIndex] || chapter?.pages[0];
@@ -225,7 +255,11 @@ export default function BookEditor() {
     setBusy(kind);
     setError("");
     try {
-      let input: GenerationInput = {
+      const service = await illustrationService(
+        p.generationMode || "auto",
+        setGenerationInfo,
+      );
+      const input: GenerationInput = {
         characters:
           kind === "character"
             ? [{ ...character, status: "locked" }]
@@ -247,7 +281,7 @@ export default function BookEditor() {
               : [...chapter.referencePhotos, ...page.referencePhotos],
         composition:
           kind === "scene"
-            ? page.compositionNotes
+            ? `${page.compositionNotes} Leave negative space ${p.typography.defaultTextPosition === "top" ? "at the top" : "at the bottom"} for story text.`
             : "Gentle storybook composition",
         requiredElements: kind === "scene" ? page.requiredElements : "",
         exclusions: kind === "scene" ? page.excludedElements : "",
@@ -258,9 +292,7 @@ export default function BookEditor() {
           (v) => v.id === page.selectedIllustrationId,
         );
         if (prior) {
-          const version = await mockIllustrationService.generate(
-            prior.recipe || input,
-          );
+          const version = await service.generate(prior.recipe || input);
           version.prompt = prior.prompt;
           version.characterReferences = prior.characterReferences;
           version.styleReference = prior.styleReference;
@@ -273,10 +305,11 @@ export default function BookEditor() {
           return;
         }
       }
-      const v = await mockIllustrationService.generate(input);
+      const v = await service.generate(input);
       if (kind === "character")
         patchCharacter({
           characterSheetImage: v.image,
+          generationModel: v.model,
           generatedPrompt: v.prompt,
         });
       if (kind === "style")
@@ -285,6 +318,7 @@ export default function BookEditor() {
           visualStyle: {
             ...p.visualStyle,
             previewImage: v.image,
+            generationModel: v.model,
             generatedStylePrompt: v.prompt,
           },
         }));
@@ -519,6 +553,23 @@ export default function BookEditor() {
             </span>
           </div>
           <h2>{steps[step]}</h2>
+          {[1, 2, 4].includes(step) && (
+            <div className="generation-notice" role="status">
+              <strong>{generationLabel}</strong>
+              <p>
+                {sampleMode
+                  ? "Sample illustrations are drawn locally. Enable AI in project settings when your server credential is configured."
+                  : generationInfo?.available
+                    ? "Generating sends this illustration’s references to OpenAI. It may take up to three minutes and uses your API credits."
+                    : "Your existing images and book stay safely saved."}
+              </p>
+              {busy && busy !== "pdf" && (
+                <span>
+                  Creating a new illustration… Your previous versions are safe.
+                </span>
+              )}
+            </div>
+          )}
           {step === 0 && (
             <>
               <p className="section-description">
@@ -1379,8 +1430,10 @@ export default function BookEditor() {
                     <span>↓</span>
                   </button>
                   <p className="help">
-                    Mock illustrations are sample artwork. You can still print
-                    and test your complete book.
+                    AI illustrations are generated at 1024 × 1024 pixels. PDF
+                    pages render at 300 DPI, but enlarging an image does not add
+                    detail. Sample illustrations already in the book remain as
+                    selected.
                   </p>
                 </>
               )}
@@ -1407,7 +1460,19 @@ export default function BookEditor() {
                 : step === 0
                   ? "A book only your family could make."
                   : step === 1 || step === 2
-                    ? "Sample artwork · Mock generation mode"
+                    ? step === 1 && character.characterSheetImage
+                      ? character.generationModel?.startsWith("mock")
+                        ? "Sample illustration"
+                        : character.generationModel
+                          ? "AI illustration"
+                          : "Saved illustration"
+                      : step === 2 && p.visualStyle.previewImage
+                        ? p.visualStyle.generationModel?.startsWith("mock")
+                          ? "Sample illustration"
+                          : p.visualStyle.generationModel
+                            ? "AI illustration"
+                            : "Saved illustration"
+                        : generationLabel
                     : "Your words. Your memories. Your story."}
             </p>
           </div>
@@ -1530,9 +1595,42 @@ export default function BookEditor() {
               the book.
             </p>
             <p>
-              Image generation is mocked in MVP v1. No photos are sent to an AI
-              service.
+              Your book stays on this device. With AI illustrations enabled,
+              only the descriptions and selected reference images for each
+              generation are sent to OpenAI when you click Generate.
             </p>
+            <Field label="Illustration mode">
+              <select
+                disabled={!!busy}
+                value={p.generationMode || "auto"}
+                onChange={(e) =>
+                  change((p) => ({
+                    ...p,
+                    generationMode: e.target.value as "auto" | "mock",
+                  }))
+                }
+              >
+                <option value="auto">AI illustrations when configured</option>
+                <option value="mock">Sample artwork · no API calls</option>
+              </select>
+            </Field>
+            <p className="help">
+              {generationInfo?.available
+                ? "The server has an image API credential configured. Each AI generation uses API credits."
+                : "AI needs an image API credential in server settings. Until then, sample artwork keeps the book editable."}{" "}
+              Failures never replace your selected image with a sample.
+            </p>
+            <button
+              disabled={!!busy}
+              onClick={() => {
+                setGenerationSettingsError(false);
+                generationStatus()
+                  .then(setGenerationInfo)
+                  .catch(() => setGenerationSettingsError(true));
+              }}
+            >
+              Check illustration settings
+            </button>
             <button className="danger" disabled={!!busy} onClick={reset}>
               Reset Project
             </button>

@@ -7,25 +7,103 @@ import {
 } from "./model";
 import { putAsset } from "./storage";
 export type GenerationInput = GenerationRecipe;
-export function assemblePrompt(i: GenerationInput) {
-  return [
-    `Create a square children’s book illustration.`,
-    ...i.characters
-      .filter((c) => c.status === "locked")
-      .map(
-        (c) =>
-          `Preserve character identity: ${c.name}, ${c.description}. Character reference: ${c.characterSheetImage || c.primaryReferencePhoto || "none"}.`,
-      ),
-    i.visualStyle.status === "locked"
-      ? `Approved style: ${i.visualStyle.generatedStylePrompt || i.visualStyle.description}`
-      : `Style: ${i.visualStyle.description}`,
-    `Scene: ${i.scene}`,
-    `Composition: ${i.composition || "Leave generous negative space for story text."}`,
-    `Required: ${i.requiredElements || "none"}`,
-    `Scene references: ${i.references.join(", ") || "none"}`,
-    `Exclude: text, lettering, watermarks, extra limbs, unintended duplicate characters, ${i.exclusions || "unrelated foreground objects"}`,
-  ].join("\n");
+import { getAsset } from "./storage";
+import { assemblePrompt, referenceAssets, MAX_REFERENCES } from "./recipe";
+export { assemblePrompt } from "./recipe";
+export interface GenerationStatus {
+  available: boolean;
+  provider: string;
+  model: string;
 }
+export async function generationStatus(
+  signal?: AbortSignal,
+): Promise<GenerationStatus> {
+  const response = await fetch("/api/illustrations", {
+    cache: "no-store",
+    signal: signal || AbortSignal.timeout(10000),
+  });
+  if (!response.ok)
+    throw new Error(
+      "Could not check image generation settings. Please try again.",
+    );
+  return response.json();
+}
+export async function illustrationService(
+  mode: "auto" | "mock" = "auto",
+  onStatus?: (status: GenerationStatus) => void,
+): Promise<IllustrationService> {
+  if (mode === "mock") return mockIllustrationService;
+  const status = await generationStatus();
+  onStatus?.(status);
+  return status.available ? aiIllustrationService : mockIllustrationService;
+}
+export const aiIllustrationService: IllustrationService = {
+  async generate(input) {
+    const references = referenceAssets(input);
+    if (references.length > MAX_REFERENCES)
+      throw new Error(
+        `Use no more than ${MAX_REFERENCES} reference images for one illustration.`,
+      );
+    const form = new FormData();
+    form.append("recipe", JSON.stringify(input));
+    for (const reference of references) {
+      const blob = await getAsset(reference.id);
+      if (blob.size > 8 * 1024 * 1024)
+        throw new Error(
+          "A reference image is too large. Upload a smaller photo.",
+        );
+      form.append(
+        "images",
+        blob,
+        `${reference.id}.${blob.type === "image/png" ? "png" : blob.type === "image/webp" ? "webp" : "jpg"}`,
+      );
+    }
+    let response: Response;
+    try {
+      response = await fetch("/api/illustrations", {
+        method: "POST",
+        body: form,
+        signal: AbortSignal.timeout(195000),
+      });
+    } catch {
+      throw new Error(
+        "Image generation could not finish. Your previous images are safe. Please try again.",
+      );
+    }
+    if (!response.ok) {
+      const body = await response.json().catch(() => null);
+      throw new Error(
+        body?.error ||
+          "Image generation failed. Your previous illustrations are safe.",
+      );
+    }
+    if (!response.headers.get("content-type")?.startsWith("image/png"))
+      throw new Error("The image service returned an unreadable illustration.");
+    const blob = await response.blob();
+    const bitmap = await createImageBitmap(blob);
+    const width = bitmap.width,
+      height = bitmap.height;
+    bitmap.close();
+    return {
+      id: uid(),
+      image: await putAsset(blob),
+      prompt: assemblePrompt(input),
+      recipe: structuredClone(input),
+      characterReferences: input.characters
+        .filter((c) => c.status === "locked")
+        .map((c) => c.characterSheetImage || c.primaryReferencePhoto || c.id),
+      styleReference:
+        input.visualStyle.status === "locked"
+          ? input.visualStyle.previewImage
+          : undefined,
+      sceneReferences: input.references,
+      model: response.headers.get("X-Illustration-Model") || "openai",
+      createdAt: new Date().toISOString(),
+      width,
+      height,
+    };
+  },
+};
 export interface IllustrationService {
   generate(input: GenerationInput): Promise<IllustrationVersion>;
 }
@@ -144,6 +222,8 @@ export const mockIllustrationService: IllustrationService = {
           : undefined,
       sceneReferences: input.references,
       model: "mock-canvas-v1",
+      width: 2400,
+      height: 2400,
       createdAt: new Date().toISOString(),
     };
   },
