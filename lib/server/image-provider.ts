@@ -7,6 +7,7 @@ export interface ImageProvider {
     prompt: string,
     references: File[],
     signal: AbortSignal,
+    mask?: File,
   ): Promise<{ bytes: Uint8Array; model: string }>;
 }
 export class ImageGenerationError extends Error {
@@ -77,7 +78,7 @@ export function createOpenAIProvider(
             )) as unknown as typeof globalThis.fetch)),
   });
   return {
-    async generate(prompt, references, signal) {
+    async generate(prompt, references, signal, mask) {
       try {
         const options = {
           model: IMAGE_MODEL,
@@ -89,7 +90,12 @@ export function createOpenAIProvider(
         };
         const result = references.length
           ? await client.images.edit(
-              { ...options, image: references, input_fidelity: "high" },
+              {
+                ...options,
+                image: references,
+                input_fidelity: "high",
+                ...(mask ? { mask } : {}),
+              },
               { signal },
             )
           : await client.images.generate(options, { signal });

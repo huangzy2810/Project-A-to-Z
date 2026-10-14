@@ -1,3 +1,5 @@
+import { editMask } from "./edit-mask";
+import { validRegion } from "../regions";
 import { z } from "zod";
 import {
   assemblePrompt,
@@ -12,6 +14,21 @@ const ids = z.array(id).max(MAX_REFERENCES);
 const status = z.enum(["draft", "locked"]);
 const text = z.string().max(5000);
 const recipeSchema = z.object({
+  tweak: z
+    .object({
+      sourceImage: id,
+      sourceVersionId: id,
+      feedback: z.string().trim().min(1).max(2000),
+      region: z
+        .object({
+          x: z.number(),
+          y: z.number(),
+          width: z.number(),
+          height: z.number(),
+        })
+        .refine(validRegion),
+    })
+    .optional(),
   characters: z
     .array(
       z.object({
@@ -157,7 +174,7 @@ export function createIllustrationHandler(
           throw new ImageGenerationError(400, issues.join(" "));
       }
       const references = referenceAssets(recipe);
-      if (references.length > MAX_REFERENCES)
+      if (references.length + (recipe.tweak ? 1 : 0) > MAX_REFERENCES)
         throw new ImageGenerationError(
           400,
           `Use no more than ${MAX_REFERENCES} reference images for one illustration.`,
@@ -180,6 +197,27 @@ export function createIllustrationHandler(
           );
         await verifyImage(image);
       }
+      let mask: File | undefined;
+      if (recipe.tweak) {
+        if (recipe.kind !== "scene")
+          throw new ImageGenerationError(
+            400,
+            "Partial edits are available for story illustrations only.",
+          );
+        const original = form.get("original");
+        if (
+          !(original instanceof File) ||
+          !original.size ||
+          original.size > MAX_FILE
+        )
+          throw new ImageGenerationError(
+            400,
+            "A valid original illustration smaller than 8 MB is required.",
+          );
+        await verifyImage(original);
+        mask = await editMask(original, recipe.tweak.region);
+        images.unshift(original);
+      }
       const signal = AbortSignal.any([
         request.signal,
         AbortSignal.timeout(180000),
@@ -190,7 +228,12 @@ export function createIllustrationHandler(
           400,
           "These story and character details are too long. Shorten them before generating.",
         );
-      const illustration = await provider.generate(prompt, images, signal);
+      const illustration = await provider.generate(
+        prompt,
+        images,
+        signal,
+        mask,
+      );
       return new Response(
         new Blob([Uint8Array.from(illustration.bytes)], { type: "image/png" }),
         {

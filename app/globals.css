@@ -1179,3 +1179,43 @@ footer > span {
   color: #6d7566;
   font-size: 10px;
 }
+
+.image-tweaker {
+  padding-top: 8px;
+}
+.tweak-canvas {
+  position: relative;
+  aspect-ratio: 1;
+  width: 100%;
+  background: #eee9dd;
+  touch-action: none;
+  cursor: crosshair;
+  overflow: hidden;
+}
+.tweak-canvas > img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+}
+.tweak-selection {
+  position: absolute;
+  border: 2px solid #527957;
+  background: #77997433;
+  box-shadow: 0 0 0 2000px #332e2322;
+  pointer-events: none;
+}
+.tweak-coordinates {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-top: 15px;
+}
+.tweak-coordinates label {
+  font-size: 10px;
+}
+.tweak-coordinates input {
+  padding: 8px !important;
+  margin-top: 6px;
+}

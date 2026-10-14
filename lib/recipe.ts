@@ -63,10 +63,19 @@ export function referenceAssets(input: GenerationRecipe): ReferenceAsset[] {
 export function assemblePrompt(input: GenerationRecipe): string {
   input = prepareGenerationRecipe(input);
   const references = referenceAssets(input);
+  const offset = input.tweak ? 1 : 0;
   return [
-    "Create one square children’s storybook illustration. Render artwork only; story text is added separately.",
+    input.tweak
+      ? "Repair Image 1 only in the transparent area of the supplied mask. Keep the original composition, lighting, story meaning and visual style. Return the complete illustration at the same square framing, changing only the marked area. No lettering or story text."
+      : "Create one square children’s storybook illustration. Render artwork only; story text is added separately.",
+    ...(input.tweak
+      ? [
+          `Requested local change: ${input.tweak.feedback}`,
+          `Marked area: x ${Math.round(input.tweak.region.x * 100)}%, y ${Math.round(input.tweak.region.y * 100)}%, width ${Math.round(input.tweak.region.width * 100)}%, height ${Math.round(input.tweak.region.height * 100)}%. Preserve everything outside it.`,
+        ]
+      : []),
     input.kind === "character"
-      ? "Generate exactly one face-only identity portrait in the approved illustration style. Show the face, natural hair and ears, cropped tightly below the chin, on a plain neutral background. No neck, shoulders, torso, full body, clothing, collars, hats, jewelry, accessories, props, scenery, additional people or labels. Extract facial identity from uploaded photos and ignore their clothing and surroundings. Facial identity takes precedence over any clothing or non-face details in the description."
+      ? "Create a canonical face-only identity sheet in a clean 2 × 2 grid. Show exactly four tightly cropped views of the same person: front, three-quarter, side profile, and front smiling. Keep facial identity, age, hair and skin tone identical across all four views. Show only face, natural hair and ears, cropped tightly below the chin, on a plain neutral background. No neck, shoulders, torso, full body, clothing, collars, hats, jewelry, accessories, props, scenery, additional people or labels. Extract facial identity from uploaded photos and ignore their clothing and surroundings. Facial identity takes precedence over any clothing or non-face details in the description."
       : input.kind === "style"
         ? "Create an uninhabited background-only sample of the requested illustration style. No people, characters, faces, silhouettes or animals, even if they appear in uploaded style references."
         : "Illustrate this story scene with only the requested characters.",
@@ -77,10 +86,12 @@ export function assemblePrompt(input: GenerationRecipe): string {
     ),
     ...(input.kind === "scene"
       ? [
-          "CHARACTER IDENTITY CONTRACT: The approved character sheets are the source of truth for identity. Draw each selected person once unless the scene explicitly requires otherwise. Keep each face, hair, skin tone, approximate age and distinctive facial features unchanged. Never exchange identities between characters or invent substitute faces.",
+          "CHARACTER IDENTITY CONTRACT: The approved character sheets are the source of truth for identity. Draw each selected person once unless the scene explicitly requires otherwise. Keep each face, hair, skin tone, approximate age and distinctive facial features unchanged. Never exchange identities between characters or invent substitute faces. The multiple views on a reference sheet depict one person; never reproduce the sheet’s grid or extra views in a story illustration.",
           ...input.characters.map((c, index) => {
             const canonical =
-              references.findIndex((r) => r.id === c.characterSheetImage) + 1;
+              references.findIndex((r) => r.id === c.characterSheetImage) +
+              1 +
+              offset;
             return `Character ${index + 1}: ${c.name}. Canonical identity = Image ${canonical}. Use only the approved face's facial identity, hair and skin tone. Do not copy clothing, accessories, body poses or background elements from identity references.`;
           }),
           "Reference hierarchy: canonical face references govern facial identity only; clothing, outfits and accessories must come from the chapter scene and scene references, never from character identity images; approved style governs medium, palette and texture only; scene photographs govern setting and composition only. Never borrow faces or people from style or scene references. Verify every selected character against their assigned sheet before completing the image.",
@@ -94,7 +105,12 @@ export function assemblePrompt(input: GenerationRecipe): string {
     `Composition: ${input.composition || "Leave generous negative space at the bottom for story text."}`,
     `Required elements: ${input.requiredElements || "none"}`,
     "Reference images are attached in exactly this order:",
-    ...references.map((r, i) => `Image ${i + 1}: ${r.label}.`),
+    ...(input.tweak
+      ? [
+          "Image 1: Original illustration to repair. The mask applies to this image only.",
+        ]
+      : []),
+    ...references.map((r, i) => `Image ${i + 1 + offset}: ${r.label}.`),
     references.length
       ? "Use identity images only for likeness, style images only for visual treatment, and scene images for location, clothing, objects or pose. Render reference-photo subjects in the approved illustration style, not as photographs. Do not introduce characters shown in scene or style references unless they are explicitly selected for this page."
       : "No image references supplied; follow the descriptions.",
@@ -178,4 +194,18 @@ export function unselectedSceneCharacters(
       ).test(scene);
     })
     .map((c) => c.name);
+}
+
+export function generationReferenceManifest(
+  input: GenerationRecipe,
+): ReferenceAsset[] {
+  return input.tweak
+    ? [
+        {
+          id: input.tweak.sourceImage,
+          label: "Original illustration to repair",
+        },
+        ...referenceAssets(input),
+      ]
+    : referenceAssets(input);
 }

@@ -1,4 +1,6 @@
 "use client";
+import ImageTweaker from "./ImageTweaker";
+import type { ImageRegion } from "@/lib/regions";
 import { useEffect, useRef, useState } from "react";
 import {
   BookProject,
@@ -288,7 +290,7 @@ export default function BookEditor() {
         visualStyle: p.visualStyle,
         scene:
           kind === "character"
-            ? `${character.name}: ${character.description}. A single tightly cropped face-only identity portrait. No clothing, body, accessories or scenery.`
+            ? `${character.name}: ${character.description}. A four-view face-only identity sheet: front, three-quarter, profile, and smiling. No clothing, body, accessories or scenery.`
             : kind === "style"
               ? "An empty Shanghai waterfront landscape with a river, skyline and gentle trees. Background only; no people, characters, faces or animals."
               : page.sceneDescription,
@@ -341,6 +343,7 @@ export default function BookEditor() {
           generatedPrompt: v.prompt,
           styleReference: v.styleReference,
           faceOnly: true,
+          faceViews: "multi-angle",
         });
       if (kind === "style")
         change((p) => ({
@@ -365,6 +368,63 @@ export default function BookEditor() {
           ? e.message
           : "Generation failed. Your previous images are safe.",
       );
+    } finally {
+      setBusy("");
+      generationRef.current = false;
+    }
+  }
+  async function tweakImage(
+    feedback: string,
+    region: ImageRegion,
+  ): Promise<boolean> {
+    if (generationRef.current || page.status === "locked" || !selected)
+      return false;
+    generationRef.current = true;
+    setBusy("tweak");
+    setError("");
+    try {
+      if (!selected.recipe)
+        throw new Error(
+          "This older illustration has no saved recipe. Use Edit & Regenerate before applying a partial edit.",
+        );
+      const characters = page.characterIds.map((id) => {
+        const current = p.characters.find((c) => c.id === id);
+        if (!current)
+          throw new Error(
+            "A selected character is missing from Character Studio. Restore the character before repairing this image.",
+          );
+        return current;
+      });
+      const input: GenerationInput = {
+        ...selected.recipe,
+        characters,
+        tweak: {
+          sourceImage: selected.image,
+          sourceVersionId: selected.id,
+          feedback,
+          region,
+        },
+      };
+      const issues = generationApprovalIssues(input);
+      if (issues.length) throw new Error(issues.join(" "));
+      const service = await illustrationService(
+        p.generationMode || "auto",
+        setGenerationInfo,
+      );
+      const version = await service.generate(input);
+      patchPage({
+        illustrationVersions: [...page.illustrationVersions, version],
+        selectedIllustrationId: version.id,
+        generatedPrompt: version.prompt,
+      });
+      return true;
+    } catch (error) {
+      setError(
+        error instanceof Error
+          ? error.message
+          : "The edit failed. Your original illustration is safe.",
+      );
+      return false;
     } finally {
       setBusy("");
       generationRef.current = false;
@@ -679,13 +739,22 @@ export default function BookEditor() {
           {step === 2 && (
             <>
               <p className="help">
-                Generate one face-only portrait using your locked style and
-                photos. Clothing, bodies, accessories and scenery are excluded.
+                Generate four face-only views—front, three-quarter, profile and
+                smiling—using your locked style and photos. Clothing, bodies,
+                accessories and scenery are excluded.
               </p>
+              {character.characterSheetImage &&
+                character.faceOnly &&
+                character.faceViews !== "multi-angle" && (
+                  <p className="help">
+                    This older reference contains one face view. Unlock and
+                    regenerate it to make a multi-angle face sheet.
+                  </p>
+                )}
               {character.characterSheetImage && !character.faceOnly && (
                 <p className="help">
                   This older reference may contain clothing or a body. Unlock
-                  and regenerate it as a face-only portrait.
+                  and regenerate it as a multi-angle face-only sheet.
                 </p>
               )}
               {character.characterSheetImage &&
@@ -1293,6 +1362,24 @@ export default function BookEditor() {
                   {isLocked ? "Unlock Page" : "Lock Page"}
                 </button>
               </div>
+              {selected && (
+                <details className="tweak-panel">
+                  <summary>Give feedback &amp; tweak part of the image</summary>
+                  {isLocked && (
+                    <p className="help">
+                      Unlock this page before changing an area. The locked
+                      version stays saved in your history.
+                    </p>
+                  )}
+                  <ImageTweaker
+                    key={selected.id}
+                    image={selected.image}
+                    disabled={isLocked || !!busy}
+                    sampleMode={sampleMode}
+                    onApply={tweakImage}
+                  />
+                </details>
+              )}
               {page.illustrationVersions.length > 0 && (
                 <div className="versions">
                   <span>Versions</span>
@@ -1311,6 +1398,7 @@ export default function BookEditor() {
                       }
                     >
                       {i + 1}
+                      {v.recipe?.tweak ? " · edit" : ""}
                     </button>
                   ))}
                 </div>

@@ -1,3 +1,4 @@
+import type { ImageRegion } from "./regions";
 export type Status = "draft" | "locked";
 export type Position = "bottom" | "top" | "separate";
 export interface Typography {
@@ -12,6 +13,7 @@ export interface Typography {
 }
 export interface Character {
   faceOnly?: boolean;
+  faceViews?: "multi-angle";
   styleReference?: string;
   generationModel?: string;
   id: string;
@@ -33,7 +35,14 @@ export interface VisualStyle {
   previewImage?: string;
   status: Status;
 }
+export interface ImageTweak {
+  sourceImage: string;
+  sourceVersionId: string;
+  feedback: string;
+  region: ImageRegion;
+}
 export interface GenerationRecipe {
+  tweak?: ImageTweak;
   characters: Character[];
   visualStyle: VisualStyle;
   scene: string;

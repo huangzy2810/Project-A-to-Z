@@ -516,7 +516,7 @@ test("character portraits exclude clothing and chapter identity references never
     kind: "character" as const,
     characters: [character],
   };
-  assert.match(assemblePrompt(portrait), /exactly one face-only/);
+  assert.match(assemblePrompt(portrait), /canonical face-only identity sheet/);
   assert.match(
     assemblePrompt(portrait),
     /No neck, shoulders, torso, full body, clothing/,

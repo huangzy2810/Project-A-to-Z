@@ -1,3 +1,4 @@
+import { compositeTweak, sampleTweak } from "./image-editing";
 import {
   Character,
   VisualStyle,
@@ -14,6 +15,7 @@ import {
   MAX_REFERENCES,
   prepareGenerationRecipe,
   generationApprovalIssues,
+  generationReferenceManifest,
 } from "./recipe";
 export { assemblePrompt } from "./recipe";
 export interface GenerationStatus {
@@ -49,7 +51,7 @@ export const aiIllustrationService: IllustrationService = {
     const issues = generationApprovalIssues(input);
     if (issues.length) throw new Error(issues.join(" "));
     const references = referenceAssets(input);
-    if (references.length > MAX_REFERENCES)
+    if (references.length + (input.tweak ? 1 : 0) > MAX_REFERENCES)
       throw new Error(
         `Use no more than ${MAX_REFERENCES} reference images for one illustration.`,
       );
@@ -66,6 +68,15 @@ export const aiIllustrationService: IllustrationService = {
         blob,
         `${reference.id}.${blob.type === "image/png" ? "png" : blob.type === "image/webp" ? "webp" : "jpg"}`,
       );
+    }
+    let original: Blob | undefined;
+    if (input.tweak) {
+      original = await getAsset(input.tweak.sourceImage);
+      if (original.size > 8 * 1024 * 1024)
+        throw new Error(
+          "The original illustration is too large for a partial edit.",
+        );
+      form.append("original", original, "original.png");
     }
     let response: Response;
     try {
@@ -88,7 +99,9 @@ export const aiIllustrationService: IllustrationService = {
     }
     if (!response.headers.get("content-type")?.startsWith("image/png"))
       throw new Error("The image service returned an unreadable illustration.");
-    const blob = await response.blob();
+    let blob = await response.blob();
+    if (input.tweak && original)
+      blob = await compositeTweak(original, blob, input.tweak.region);
     const bitmap = await createImageBitmap(blob);
     const width = bitmap.width,
       height = bitmap.height;
@@ -98,7 +111,7 @@ export const aiIllustrationService: IllustrationService = {
       image: await putAsset(blob),
       prompt: assemblePrompt(input),
       recipe: structuredClone(input),
-      referenceManifest: referenceAssets(input),
+      referenceManifest: generationReferenceManifest(input),
       characterReferences: input.characters
         .filter((c) => c.status === "locked")
         .map((c) => c.characterSheetImage || c.primaryReferencePhoto || c.id),
@@ -124,6 +137,33 @@ export const mockIllustrationService: IllustrationService = {
     const issues = generationApprovalIssues(input);
     if (issues.length) throw new Error(issues.join(" "));
     await new Promise((r) => setTimeout(r, 650));
+    if (input.tweak) {
+      const blob = await sampleTweak(
+        await getAsset(input.tweak.sourceImage),
+        input.tweak.region,
+      );
+      const bitmap = await createImageBitmap(blob);
+      const width = bitmap.width,
+        height = bitmap.height;
+      bitmap.close();
+      return {
+        id: uid(),
+        image: await putAsset(blob),
+        prompt: assemblePrompt(input),
+        recipe: structuredClone(input),
+        referenceManifest: generationReferenceManifest(input),
+        characterReferences: input.characters
+          .map((c) => c.characterSheetImage!)
+          .filter(Boolean),
+        styleReference: input.visualStyle.previewImage,
+        sceneReferences: input.references,
+        model: "mock-region-edit-v1",
+        createdAt: new Date().toISOString(),
+        width,
+        height,
+      };
+    }
+
     const canvas = document.createElement("canvas");
     canvas.width = 2400;
     canvas.height = 2400;
@@ -180,17 +220,21 @@ export const mockIllustrationService: IllustrationService = {
       input.kind === "style"
         ? 0
         : input.kind === "character"
-          ? 1
+          ? 4
           : Math.max(1, input.characters.length);
     for (let n = 0; n < poses; n++) {
-      const x = input.kind === "character" ? 1200 : 900 + n * 350;
-      const y = input.kind === "character" ? 1950 : 1660;
+      const x =
+        input.kind === "character" ? 600 + (n % 2) * 1200 : 900 + n * 350;
+      const y =
+        input.kind === "character" ? 975 + Math.floor(n / 2) * 1200 : 1660;
       const adult =
         input.characters[n]?.name !== "Ava" && input.kind !== "character";
-      const size = input.kind === "character" ? 10 : adult ? 1.2 : 1;
+      const size = input.kind === "character" ? 5 : adult ? 1.2 : 1;
       c.save();
       c.translate(x, y);
       c.scale(size, size);
+      if (input.kind === "character" && n === 1) c.scale(0.85, 1);
+      if (input.kind === "character" && n === 2) c.scale(0.55, 1);
       if (input.kind !== "character") {
         c.fillStyle = ["#ca846e", "#7d9990", "#c4a36f"][n % 3];
         c.beginPath();
@@ -208,12 +252,16 @@ export const mockIllustrationService: IllustrationService = {
       c.fillStyle = "#54473b";
       c.beginPath();
       c.arc(-25, -65, 7, 0, Math.PI * 2);
-      c.arc(25, -65, 7, 0, Math.PI * 2);
+      if (input.kind !== "character" || n !== 2)
+        c.arc(25, -65, 7, 0, Math.PI * 2);
       c.fill();
       c.strokeStyle = "#a16b55";
       c.lineWidth = 5;
       c.beginPath();
-      c.arc(0, -47, 22, 0, Math.PI);
+      if (input.kind === "character" && n !== 3) {
+        c.moveTo(-16, -30);
+        c.lineTo(16, -30);
+      } else c.arc(0, -47, 22, 0, Math.PI);
       c.stroke();
       c.fillStyle = "#54473b";
       if (input.kind !== "character") {
@@ -233,7 +281,7 @@ export const mockIllustrationService: IllustrationService = {
     );
     return {
       recipe: structuredClone(input),
-      referenceManifest: referenceAssets(input),
+      referenceManifest: generationReferenceManifest(input),
       id: uid(),
       image: await putAsset(blob),
       prompt: assemblePrompt(input),

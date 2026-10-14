@@ -1,5 +1,23 @@
 import { test, expect } from "@playwright/test";
 import fs from "node:fs";
+test.beforeEach(async ({ page }) => {
+  await page.route("**/api/illustrations", (route) =>
+    route.request().method() === "GET"
+      ? route.fulfill({
+          json: {
+            available: false,
+            provider: "OpenAI",
+            model: "gpt-image-1.5",
+          },
+        })
+      : route.fulfill({
+          status: 500,
+          json: {
+            error: "Unexpected paid API request in sample workflow test",
+          },
+        }),
+  );
+});
 test("complete local book workflow, reload, locked pages and square PDF", async ({
   page,
 }) => {
