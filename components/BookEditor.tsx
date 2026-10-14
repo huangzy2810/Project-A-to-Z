@@ -25,7 +25,12 @@ import {
 import { AssetImage, BookPage, orderedPages, RenderPage } from "./BookPage";
 import DropZone from "./DropZone";
 import { exportPdf } from "@/lib/pdf";
-import { generationApprovalIssues, referenceAssets } from "@/lib/recipe";
+import {
+  generationApprovalIssues,
+  referenceAssets,
+  retryIdentityIssues,
+  unselectedSceneCharacters,
+} from "@/lib/recipe";
 const steps = [
   "Book Setup",
   "Visual Style",
@@ -252,6 +257,19 @@ export default function BookEditor() {
       setError("Tell us what happens on this page first.");
       return;
     }
+    if (kind === "scene" && !retry) {
+      const missing = unselectedSceneCharacters(
+        page.sceneDescription,
+        p.characters,
+        page.characterIds,
+      );
+      if (missing.length) {
+        setError(
+          `Select ${missing.join(", ")} under “Who appears in this scene?” so their approved identities are included, or remove them from the scene description.`,
+        );
+        return;
+      }
+    }
     generationRef.current = true;
     setBusy(kind);
     setError("");
@@ -293,7 +311,12 @@ export default function BookEditor() {
           (v) => v.id === page.selectedIllustrationId,
         );
         if (prior) {
-          const recipe = prior.recipe || input;
+          const identityIssues = retryIdentityIssues(
+            prior.recipe,
+            p.characters,
+          );
+          if (identityIssues.length) throw new Error(identityIssues.join(" "));
+          const recipe = prior.recipe!;
           const issues = generationApprovalIssues(recipe);
           if (issues.length)
             throw new Error(
@@ -1127,6 +1150,15 @@ export default function BookEditor() {
                     </label>
                   ))}
                 </div>
+                {selected &&
+                  retryIdentityIssues(selected.recipe, p.characters).length >
+                    0 && (
+                    <p className="help">
+                      The selected version uses older or unapproved character
+                      references. Use Edit &amp; Regenerate after locking the
+                      current characters.
+                    </p>
+                  )}
                 <div
                   className="reference-summary"
                   aria-label="Chapter illustration references"
@@ -1162,8 +1194,15 @@ export default function BookEditor() {
                   )}
                   {selected?.recipe && (
                     <details>
-                      <summary>References used by selected version</summary>
-                      {referenceAssets(selected.recipe).map((r, i) => (
+                      <summary>
+                        {selected.referenceManifest
+                          ? "References used by selected version"
+                          : "Saved recipe references (legacy version)"}
+                      </summary>
+                      {(
+                        selected.referenceManifest ||
+                        referenceAssets(selected.recipe)
+                      ).map((r, i) => (
                         <p key={r.id}>
                           {i + 1}. {r.label}
                         </p>

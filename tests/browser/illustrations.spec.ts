@@ -109,13 +109,17 @@ test("AI client sends image references, retains retries and history, and never f
   ]);
   await page.getByRole("button", { name: /Chapter$/ }).click();
   await page.getByRole("checkbox", { name: "Ava" }).check();
+  await page
+    .getByLabel("What happens on this page?")
+    .fill("Ava strolls along the Bund at sunset.");
   await upload();
   await expect(page.getByAltText("Reference photo 1")).toBeVisible();
   await page.getByRole("button", { name: "Generate", exact: true }).click();
   await expect(page.locator(".versions button")).toHaveCount(1);
-  expect(imageCounts[2]).toBe(4);
+  expect(imageCounts[2]).toBe(5);
   expect(referenceAssets(requests[2]).map((r) => r.label)).toEqual([
     "Ava: approved identity reference",
+    "Ava: supporting identity photo",
     "Approved visual style sample",
     "Visual style reference 1",
     "Scene reference 1",
@@ -155,6 +159,43 @@ test("AI client sends image references, retains retries and history, and never f
   await expect(page.locator(".generation-notice")).toContainText(
     "Sample artwork",
   );
+  await page.getByRole("button", { name: /Character$/ }).click();
+  await page
+    .getByRole("button", { name: "Unlock Character", exact: true })
+    .click();
+  await page
+    .getByLabel("What makes them, them?")
+    .fill("Ava has a short bob and a little red hair ribbon.");
+  await page.getByRole("button", { name: "Try Again", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Lock Character", exact: true }),
+  ).toBeEnabled();
+  await page
+    .getByRole("button", { name: "Lock Character", exact: true })
+    .click();
+  await page.getByRole("button", { name: /Chapter$/ }).click();
+  await page.getByRole("button", { name: "Unlock Page", exact: true }).click();
+  await page.getByRole("button", { name: "Try Again", exact: true }).click();
+  await expect(page.locator(".global-error")).toContainText(
+    "approved identity has changed",
+  );
+  await expect(page.locator(".versions button")).toHaveCount(4);
+  await page
+    .getByRole("button", { name: "Edit & Regenerate", exact: true })
+    .click();
+  await expect(page.locator(".versions button")).toHaveCount(5);
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const p = JSON.parse(localStorage.getItem("ava-book-project-v1")!);
+        return (
+          p.chapters[0].pages[0].illustrationVersions.at(-1).recipe
+            .characters[0].characterSheetImage ===
+          p.characters[0].characterSheetImage
+        );
+      }),
+    )
+    .toBe(true);
 });
 
 test("missing configuration explicitly uses samples, while configuration errors stop generation", async ({
@@ -221,7 +262,15 @@ test("chapter generation blocks missing approvals and shows reference requiremen
 }) => {
   await page.goto("/");
   await page.getByRole("button", { name: /Chapter$/ }).click();
+  await page
+    .getByLabel("What happens on this page?")
+    .fill("Ava strolls along the Bund.");
+  await page.getByRole("button", { name: "Generate", exact: true }).click();
+  await expect(page.locator(".global-error")).toContainText("Select Ava");
   await page.getByRole("checkbox", { name: "Ava" }).check();
+  await page
+    .getByLabel("What happens on this page?")
+    .fill("Ava strolls along the Bund at sunset.");
   await expect(
     page.getByLabel("Chapter illustration references"),
   ).toContainText("Ava (needs approval)");

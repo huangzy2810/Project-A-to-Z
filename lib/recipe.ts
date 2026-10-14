@@ -41,6 +41,17 @@ export function referenceAssets(input: GenerationRecipe): ReferenceAsset[] {
         );
     }
   }
+  if (input.kind === "scene") {
+    // Keep every canonical sheet ahead of supporting photos and all style/scene references.
+    for (const character of input.characters.filter(
+      (c) => c.status === "locked",
+    )) {
+      add(
+        character.primaryReferencePhoto,
+        `${character.name}: supporting identity photo`,
+      );
+    }
+  }
   if (input.kind === "style" || input.visualStyle.status === "locked") {
     if (input.kind !== "style")
       add(input.visualStyle.previewImage, "Approved visual style sample");
@@ -75,6 +86,21 @@ export function assemblePrompt(input: GenerationRecipe): string {
         ? `Preserve character identity: ${c.name}, ${c.description}. Keep facial features, hairstyle, approximate age and body proportions consistent with their attached references.`
         : `Character: ${c.name}, ${c.description}.`,
     ),
+    ...(input.kind === "scene"
+      ? [
+          "CHARACTER IDENTITY CONTRACT: The approved character sheets are the source of truth for identity. Draw each selected person once unless the scene explicitly requires otherwise. Keep each face, hair, skin tone, approximate age, proportions and distinctive features unchanged. Never exchange identities between characters or invent substitute faces.",
+          ...input.characters.map((c, index) => {
+            const canonical =
+              references.findIndex((r) => r.id === c.characterSheetImage) + 1;
+            const photo = c.primaryReferencePhoto
+              ? references.findIndex((r) => r.id === c.primaryReferencePhoto) +
+                1
+              : 0;
+            return `Character ${index + 1}: ${c.name}. Canonical identity = Image ${canonical}. ${photo ? `Supporting likeness = Image ${photo}.` : ""} Use the character sheet's identity and design; supporting photos clarify likeness without overriding the approved design. Description: ${c.description}.`;
+          }),
+          "Reference hierarchy: canonical sheets govern identity; approved style governs medium, palette and texture only; scene photographs govern setting and composition only. Never borrow faces or people from style or scene references. Verify every selected character against their assigned sheet before completing the image.",
+        ]
+      : []),
     `Visual style: ${input.visualStyle.description}`,
     input.kind !== "style" && input.visualStyle.status === "locked"
       ? "Match the attached approved style sample across every character, background and object; preserve its palette, medium, texture and linework. Approved style takes precedence over the photographic appearance of identity and scene references."
@@ -113,4 +139,58 @@ export function generationApprovalIssues(input: GenerationRecipe): string[] {
 
 export function sceneApprovalIssues(input: GenerationRecipe): string[] {
   return input.kind === "scene" ? generationApprovalIssues(input) : [];
+}
+
+export function retryIdentityIssues(
+  recipe: GenerationRecipe | undefined,
+  current: GenerationRecipe["characters"],
+): string[] {
+  if (!recipe)
+    return [
+      "This version has no saved identity recipe. Use Edit & Regenerate with the current approved characters.",
+    ];
+  return recipe.characters.flatMap((previous) => {
+    const character = current.find((c) => c.id === previous.id);
+    if (
+      !character ||
+      character.status !== "locked" ||
+      !character.characterSheetImage
+    )
+      return [
+        `${previous.name} no longer has an approved character sheet. Lock their character in Character Studio before regenerating.`,
+      ];
+    if (
+      character.characterSheetImage !== previous.characterSheetImage ||
+      character.primaryReferencePhoto !== previous.primaryReferencePhoto ||
+      character.name !== previous.name ||
+      character.description !== previous.description
+    )
+      return [
+        `${character.name}'s approved identity has changed. Use Edit & Regenerate to apply the current Character Studio reference.`,
+      ];
+    return [];
+  });
+}
+export function unselectedSceneCharacters(
+  scene: string,
+  characters: GenerationRecipe["characters"],
+  selectedIds: string[],
+): string[] {
+  return characters
+    .filter((c) => !selectedIds.includes(c.id) && c.name.trim())
+    .filter((c) => {
+      const escape = String.fromCharCode(92);
+      const name = Array.from(c.name.trim())
+        .map((letter) =>
+          (".*+?^${}()|[]" + escape).includes(letter)
+            ? escape + letter
+            : letter,
+        )
+        .join("");
+      return new RegExp(
+        `(^|[^\p{L}\p{N}])${name}(?=$|[^\p{L}\p{N}])`,
+        "iu",
+      ).test(scene);
+    })
+    .map((c) => c.name);
 }

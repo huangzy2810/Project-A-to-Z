@@ -60,11 +60,11 @@ test("references have explicit roles, deduplicate and preserve identity-first or
   };
   assert.deepEqual(
     referenceAssets(input).map((r) => r.id),
-    ["sheet", "style", "inspiration", "scene"],
+    ["sheet", "portrait", "style", "inspiration", "scene"],
   );
   const prompt = assemblePrompt(input);
   assert.match(prompt, /Image 1: Ava: approved identity reference/);
-  assert.match(prompt, /Image 4: Scene reference 1/);
+  assert.match(prompt, /Image 5: Scene reference 1/);
   assert.doesNotMatch(prompt, /identity reference.*Mama/);
   assert.match(prompt, /Character: Mama/);
   assert.match(prompt, /no|Exclude/);
@@ -422,4 +422,100 @@ test("character generation uses locked style in addition to identity photos and 
   }));
   assert.equal((await handler(request(input))).status, 400);
   assert.equal(called, false);
+});
+
+test("every scene character has explicit numbered sheet and primary-photo identity bindings", () => {
+  const p = createProject();
+  const input = {
+    ...recipe(),
+    characters: p.characters.map((c, i) => ({
+      ...c,
+      status: "locked" as const,
+      characterSheetImage: `sheet-${i}`,
+      primaryReferencePhoto: `photo-${i}`,
+    })),
+    visualStyle: {
+      ...p.visualStyle,
+      status: "locked" as const,
+      previewImage: "style",
+    },
+    references: ["location"],
+  };
+  assert.deepEqual(
+    referenceAssets(input).map((r) => r.id),
+    [
+      "sheet-0",
+      "sheet-1",
+      "sheet-2",
+      "photo-0",
+      "photo-1",
+      "photo-2",
+      "style",
+      "location",
+    ],
+  );
+  const prompt = assemblePrompt(input);
+  assert.match(
+    prompt,
+    /Ava\. Canonical identity = Image 1\. Supporting likeness = Image 4/,
+  );
+  assert.match(
+    prompt,
+    /Mama\. Canonical identity = Image 2\. Supporting likeness = Image 5/,
+  );
+  assert.match(
+    prompt,
+    /Papa\. Canonical identity = Image 3\. Supporting likeness = Image 6/,
+  );
+  assert.match(prompt, /Never exchange identities/);
+});
+test("retries detect changed or unlocked Character Studio identities without changing the saved recipe", async () => {
+  const { retryIdentityIssues, unselectedSceneCharacters } =
+    await import("../lib/recipe");
+  const p = createProject();
+  const character = {
+    ...p.characters[0],
+    status: "locked" as const,
+    characterSheetImage: "original",
+  };
+  const snapshot = { ...recipe(), characters: [character] };
+  assert.deepEqual(retryIdentityIssues(snapshot, [character]), []);
+  assert.match(
+    retryIdentityIssues(snapshot, [
+      { ...character, characterSheetImage: "new" },
+    ])[0],
+    /Edit & Regenerate/,
+  );
+  assert.match(
+    retryIdentityIssues(snapshot, [{ ...character, status: "draft" }])[0],
+    /Lock their character/,
+  );
+  assert.equal(snapshot.characters[0].characterSheetImage, "original");
+  assert.deepEqual(
+    unselectedSceneCharacters("Ava and Mama visit the Bund.", p.characters, [
+      p.characters[0].id,
+    ]),
+    ["Mama"],
+  );
+  assert.deepEqual(
+    unselectedSceneCharacters("A pavilion at sunset.", p.characters, []),
+    [],
+  );
+});
+
+test("scene name detection respects whole names and literal punctuation", async () => {
+  const { unselectedSceneCharacters } = await import("../lib/recipe");
+  const p = createProject();
+  assert.deepEqual(
+    unselectedSceneCharacters("Avana visits a pavilion.", p.characters, []),
+    [],
+  );
+  const dotted = { ...p.characters[0], name: "Dr. Lin" };
+  assert.deepEqual(
+    unselectedSceneCharacters("DrX Lin walks away.", [dotted], []),
+    [],
+  );
+  assert.deepEqual(unselectedSceneCharacters("Dr. Lin smiles.", [dotted], []), [
+    "Dr. Lin",
+  ]);
 });

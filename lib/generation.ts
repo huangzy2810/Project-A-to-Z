@@ -98,6 +98,7 @@ export const aiIllustrationService: IllustrationService = {
       image: await putAsset(blob),
       prompt: assemblePrompt(input),
       recipe: structuredClone(input),
+      referenceManifest: referenceAssets(input),
       characterReferences: input.characters
         .filter((c) => c.status === "locked")
         .map((c) => c.characterSheetImage || c.primaryReferencePhoto || c.id),
@@ -226,6 +227,7 @@ export const mockIllustrationService: IllustrationService = {
     );
     return {
       recipe: structuredClone(input),
+      referenceManifest: referenceAssets(input),
       id: uid(),
       image: await putAsset(blob),
       prompt: assemblePrompt(input),

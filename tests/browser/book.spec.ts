@@ -56,7 +56,8 @@ test("complete local book workflow, reload, locked pages and square PDF", async 
     ).toBeVisible();
   }
   await page.getByRole("button", { name: /Chapter$/ }).click();
-  await page.getByRole("checkbox", { name: "Ava" }).check();
+  for (const name of ["Ava", "Mama", "Papa"])
+    await page.getByRole("checkbox", { name }).check();
   await page.getByRole("button", { name: "Generate", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "Lock Page", exact: true }),
