@@ -1,5 +1,11 @@
 import { z } from "zod";
-import { assemblePrompt, referenceAssets, MAX_REFERENCES } from "../recipe";
+import {
+  assemblePrompt,
+  referenceAssets,
+  MAX_REFERENCES,
+  prepareGenerationRecipe,
+  generationApprovalIssues,
+} from "../recipe";
 import { ImageGenerationError, type ImageProvider } from "./image-provider";
 const id = z.string().min(1).max(100);
 const ids = z.array(id).max(MAX_REFERENCES);
@@ -144,7 +150,12 @@ export function createIllustrationHandler(
           400,
           "The illustration request contains invalid or oversized story details.",
         );
-      const recipe = result.data;
+      const recipe = prepareGenerationRecipe(result.data);
+      if (recipe.kind === "character") {
+        const issues = generationApprovalIssues(recipe);
+        if (issues.length)
+          throw new ImageGenerationError(400, issues.join(" "));
+      }
       const references = referenceAssets(recipe);
       if (references.length > MAX_REFERENCES)
         throw new ImageGenerationError(

@@ -11,6 +11,7 @@ export interface Typography {
   defaultTextPosition: Position;
 }
 export interface Character {
+  styleReference?: string;
   generationModel?: string;
   id: string;
   name: string;
@@ -23,6 +24,7 @@ export interface Character {
   status: Status;
 }
 export interface VisualStyle {
+  backgroundOnly?: boolean;
   generationModel?: string;
   description: string;
   referenceImages: string[];

@@ -351,3 +351,75 @@ test("chapter approval checks prevent silent omission of character and style ass
     ["new-sheet", "new-style"],
   );
 });
+
+test("style generation cannot include character identities even with legacy character inputs", async () => {
+  const { prepareGenerationRecipe } = await import("../lib/recipe");
+  const p = createProject();
+  const input = {
+    ...recipe(),
+    kind: "style" as const,
+    characters: [
+      {
+        ...p.characters[0],
+        status: "locked" as const,
+        characterSheetImage: "identity-sheet",
+      },
+    ],
+    references: ["style-photo"],
+    scene: "Ava and her family",
+  };
+  const normalized = prepareGenerationRecipe(input);
+  assert.deepEqual(normalized.characters, []);
+  assert.deepEqual(
+    referenceAssets(input).map((r) => r.id),
+    ["style-photo"],
+  );
+  const prompt = assemblePrompt(input);
+  assert.match(prompt, /background-only/);
+  assert.match(prompt, /No people, characters, faces/);
+  assert.doesNotMatch(prompt, /Preserve character identity: Ava/);
+  assert.doesNotMatch(prompt, /Ava and her family/);
+});
+test("character generation uses locked style in addition to identity photos and requires approval", async () => {
+  const { generationApprovalIssues } = await import("../lib/recipe");
+  const p = createProject();
+  const input = {
+    ...recipe(),
+    kind: "character" as const,
+    characters: [
+      {
+        ...p.characters[0],
+        status: "locked" as const,
+        referencePhotos: ["identity-photo"],
+        primaryReferencePhoto: "identity-photo",
+      },
+    ],
+  };
+  assert.equal(generationApprovalIssues(input).length, 1);
+  const approved = {
+    ...input,
+    visualStyle: {
+      ...p.visualStyle,
+      status: "locked" as const,
+      previewImage: "background-style",
+    },
+  };
+  assert.deepEqual(generationApprovalIssues(approved), []);
+  assert.deepEqual(
+    referenceAssets(approved).map((r) => r.id),
+    ["identity-photo", "background-style"],
+  );
+  assert.match(
+    assemblePrompt(approved),
+    /Match the attached approved style sample/,
+  );
+  let called = false;
+  const handler = createIllustrationHandler(() => ({
+    async generate() {
+      called = true;
+      return { bytes: png, model: IMAGE_MODEL };
+    },
+  }));
+  assert.equal((await handler(request(input))).status, 400);
+  assert.equal(called, false);
+});

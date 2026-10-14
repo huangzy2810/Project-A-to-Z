@@ -72,6 +72,23 @@ test("AI client sends image references, retains retries and history, and never f
   await expect(page.locator(".generation-notice")).toContainText(
     "AI illustrations",
   );
+  await expect(
+    page.getByRole("heading", { name: "Visual Style", exact: true }),
+  ).toBeVisible();
+  await upload();
+  await expect(page.getByAltText("Reference photo 1")).toBeVisible();
+  await page
+    .getByRole("button", { name: "Generate Style", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Lock Style", exact: true }),
+  ).toBeEnabled();
+  await page.getByRole("button", { name: "Lock Style", exact: true }).click();
+  expect(requests[0].kind).toBe("style");
+  expect(requests[0].characters).toEqual([]);
+  expect(imageCounts[0]).toBe(1);
+  expect(requests[0].scene).toContain("Background only");
+  await page.getByRole("button", { name: /Character$/ }).click();
   await upload();
   await expect(page.getByAltText("Reference photo 1")).toBeVisible();
   await page
@@ -83,19 +100,13 @@ test("AI client sends image references, retains retries and history, and never f
   await page
     .getByRole("button", { name: "Lock Character", exact: true })
     .click();
-  expect(requests[0].kind).toBe("character");
-  expect(imageCounts[0]).toBe(1);
-  await page.getByRole("button", { name: /Visual Style$/ }).click();
-  await upload();
-  await expect(page.getByAltText("Reference photo 1")).toBeVisible();
-  await page
-    .getByRole("button", { name: "Generate Style", exact: true })
-    .click();
-  await expect(
-    page.getByRole("button", { name: "Lock Style", exact: true }),
-  ).toBeEnabled();
-  await page.getByRole("button", { name: "Lock Style", exact: true }).click();
-  expect(imageCounts[1]).toBe(2);
+  expect(requests[1].kind).toBe("character");
+  expect(imageCounts[1]).toBe(3);
+  expect(referenceAssets(requests[1]).map((r) => r.label)).toEqual([
+    "Ava: primary identity photo",
+    "Approved visual style sample",
+    "Visual style reference 1",
+  ]);
   await page.getByRole("button", { name: /Chapter$/ }).click();
   await page.getByRole("checkbox", { name: "Ava" }).check();
   await upload();
@@ -164,11 +175,11 @@ test("missing configuration explicitly uses samples, while configuration errors 
     route.fulfill({ status: 503, json: { error: "Settings unavailable" } }),
   );
   await page
-    .getByRole("button", { name: "Generate Character", exact: true })
+    .getByRole("button", { name: "Generate Style", exact: true })
     .click();
   await expect(page.locator(".global-error")).toContainText("Could not check");
   await expect(
-    page.getByRole("button", { name: "Lock Character", exact: true }),
+    page.getByRole("button", { name: "Lock Style", exact: true }),
   ).toBeDisabled();
 });
 
@@ -194,13 +205,13 @@ test("automatic mode refreshes its label if the credential becomes unavailable",
   );
   available = false;
   await page
-    .getByRole("button", { name: "Generate Character", exact: true })
+    .getByRole("button", { name: "Generate Style", exact: true })
     .click();
   await expect(page.locator(".generation-notice")).toContainText(
     "AI not configured",
   );
   await expect(
-    page.getByRole("button", { name: "Lock Character", exact: true }),
+    page.getByRole("button", { name: "Lock Style", exact: true }),
   ).toBeEnabled();
   expect(posts).toBe(0);
 });

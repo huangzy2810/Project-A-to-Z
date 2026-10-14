@@ -13,6 +13,15 @@ test("complete local book workflow, reload, locked pages and square PDF", async 
     .getByLabel("What shall we call your book?")
     .fill("Ava’s Wonderful Shanghai");
   await page.getByRole("button", { name: "Begin our story" }).click();
+  await page.getByRole("button", { name: /Visual Style$/ }).click();
+  await page
+    .getByRole("button", { name: "Generate Style", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Lock Style", exact: true }),
+  ).toBeEnabled();
+  await page.getByRole("button", { name: "Lock Style", exact: true }).click();
+  await page.getByRole("button", { name: /Character$/ }).click();
   const photo = Buffer.from(
     await page.evaluate(() => {
       const c = document.createElement("canvas");
@@ -46,14 +55,6 @@ test("complete local book workflow, reload, locked pages and square PDF", async 
       page.getByRole("button", { name: "Unlock Character", exact: true }),
     ).toBeVisible();
   }
-  await page.getByRole("button", { name: /Visual Style$/ }).click();
-  await page
-    .getByRole("button", { name: "Generate Style", exact: true })
-    .click();
-  await expect(
-    page.getByRole("button", { name: "Lock Style", exact: true }),
-  ).toBeEnabled();
-  await page.getByRole("button", { name: "Lock Style", exact: true }).click();
   await page.getByRole("button", { name: /Chapter$/ }).click();
   await page.getByRole("checkbox", { name: "Ava" }).check();
   await page.getByRole("button", { name: "Generate", exact: true }).click();

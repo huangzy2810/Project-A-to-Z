@@ -8,7 +8,13 @@ import {
 import { putAsset } from "./storage";
 export type GenerationInput = GenerationRecipe;
 import { getAsset } from "./storage";
-import { assemblePrompt, referenceAssets, MAX_REFERENCES } from "./recipe";
+import {
+  assemblePrompt,
+  referenceAssets,
+  MAX_REFERENCES,
+  prepareGenerationRecipe,
+  generationApprovalIssues,
+} from "./recipe";
 export { assemblePrompt } from "./recipe";
 export interface GenerationStatus {
   available: boolean;
@@ -39,6 +45,9 @@ export async function illustrationService(
 }
 export const aiIllustrationService: IllustrationService = {
   async generate(input) {
+    input = prepareGenerationRecipe(input);
+    const issues = generationApprovalIssues(input);
+    if (issues.length) throw new Error(issues.join(" "));
     const references = referenceAssets(input);
     if (references.length > MAX_REFERENCES)
       throw new Error(
@@ -110,6 +119,9 @@ export interface IllustrationService {
 // Deterministic integration boundary: a real provider can replace this service later.
 export const mockIllustrationService: IllustrationService = {
   async generate(input) {
+    input = prepareGenerationRecipe(input);
+    const issues = generationApprovalIssues(input);
+    if (issues.length) throw new Error(issues.join(" "));
     await new Promise((r) => setTimeout(r, 650));
     const canvas = document.createElement("canvas");
     canvas.width = 2400;
@@ -160,7 +172,11 @@ export const mockIllustrationService: IllustrationService = {
       c.stroke();
     }
     const poses =
-      input.kind === "character" ? 6 : Math.max(1, input.characters.length);
+      input.kind === "style"
+        ? 0
+        : input.kind === "character"
+          ? 6
+          : Math.max(1, input.characters.length);
     for (let n = 0; n < poses; n++) {
       const x =
         input.kind === "character" ? 480 + (n % 3) * 720 : 900 + n * 350;

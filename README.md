@@ -20,7 +20,7 @@ Open the development server in your browser on port 3000. For a production run, 
 3. Restart the Next.js server after setting a local environment file. Open project settings and click **Check illustration settings**. A configured credential is reported without exposing its value; successful API generation is the actual access check.
 4. Select **AI illustrations when configured**. Character, style and page generation now use OpenAI. Select **Sample artwork · no API calls** to work offline with local samples.
 
-The provider uses `gpt-image-1.5`, one high-quality 1024 × 1024 PNG per generation, and high input fidelity for reference-image requests. No references uses `/v1/images/generations`; attached photos use `/v1/images/edits`. Approved character identity references come first, followed by approved style and scene references, with matching labels in the assembled prompt. Character sheets use the primary photo and other identity photos. Up to 16 deduplicated references are supported, with an 8 MB per-file and 28 MB total request limit. The server bounds and validates the upload before sending it upstream.
+The provider uses `gpt-image-1.5`, one high-quality 1024 × 1024 PNG per generation, and high input fidelity for reference-image requests. No references uses `/v1/images/generations`; attached photos use `/v1/images/edits`. Approved character identity references come first, followed by approved style and scene references, with matching labels in the assembled prompt. Style previews are uninhabited backgrounds and never receive character identity attachments; any people in uploaded style references are explicitly excluded from the output. Character sheets use the primary photo, other identity photos, and the locked style sample. Generating a character requires a locked visual style. Up to 16 deduplicated references are supported, with an 8 MB per-file and 28 MB total request limit. The server bounds and validates the upload before sending it upstream.
 
 **Generate sends the chosen references and descriptions to OpenAI and uses your API credits.** The app does not automatically generate on load, retry paid requests, or replace failed AI requests with mock artwork. Timeout, quota, access and invalid-input errors keep all existing images and history. No key means explicitly labelled sample mode. An unavailable settings endpoint blocks automatic mode rather than silently claiming an AI result. API billing/model access and organization verification may be required by your OpenAI account. See [OpenAI image generation documentation](https://platform.openai.com/docs/guides/image-generation).
 
@@ -29,8 +29,8 @@ The endpoint uses the server’s credential and has no application authenticatio
 ## Create a book
 
 1. Give the book a title and a feeling.
-2. Add photos and descriptions for Ava, Mama and Papa. Generate and lock their character sheets.
-3. Generate and lock a visual style.
+2. Generate and lock a visual style using a background-only sample. No character identities are sent to this step.
+3. Add photos and descriptions for Ava, Mama and Papa. Generate and lock their character sheets using the approved visual style.
 4. Choose fonts, sizes, alignment and text placement.
 5. Add chapters and individual pages, choose characters, upload references and generate illustrations (AI or samples, according to your settings). Try Again retains the selected version’s generation recipe; Edit & Regenerate uses current inputs. Select an earlier version at any time before locking.
 6. Add a closing letter and family photo, then upload photographs for the memories section.
@@ -51,7 +51,9 @@ The Book Drawer and numbered progress navigation provide direct access to every 
 
 Meaningful edits autosave with a short debounce; pagehide flushes current metadata. Reload restores the project. Corrupted metadata is retained rather than silently replaced. The UI reports upload, storage, generation and export errors. Reset Project requires confirmation and clears local metadata and image assets.
 
-Chapter generation requires a locked visual-style sample and locked character sheets for every selected character. The Chapter Builder shows current approvals and the selected version’s actual reference list. Select the characters explicitly; unselected characters have no identity attachments. Try Again keeps the selected version’s saved approvals, while Edit & Regenerate applies current approvals. Scene photographs do not override the approved visual treatment.
+Chapter generation requires a locked visual-style sample and locked character sheets for every selected character. Older locked assets are retained. To apply the new workflow to an existing book, explicitly unlock and regenerate the visual style as a background, lock it, then unlock/regenerate character sheets in that style. The editor flags older style samples and character sheets made with a different or missing style reference. Existing story pages remain unchanged until explicitly regenerated.
+
+The Chapter Builder shows current approvals and the selected version’s actual reference list. Select the characters explicitly; unselected characters have no identity attachments. Try Again keeps the selected version’s saved approvals, while Edit & Regenerate applies current approvals. Scene photographs do not override the approved visual treatment.
 
 Locked assets cannot be edited or regenerated until manually unlocked. Locked pages also snapshot typography. Global changes leave existing locked pages unchanged. Generation history is retained for story pages.
 

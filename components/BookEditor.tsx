@@ -25,11 +25,11 @@ import {
 import { AssetImage, BookPage, orderedPages, RenderPage } from "./BookPage";
 import DropZone from "./DropZone";
 import { exportPdf } from "@/lib/pdf";
-import { sceneApprovalIssues, referenceAssets } from "@/lib/recipe";
+import { generationApprovalIssues, referenceAssets } from "@/lib/recipe";
 const steps = [
   "Book Setup",
-  "Character Studio",
   "Visual Style",
+  "Character Studio",
   "Typography & Layout",
   "Chapter Builder",
   "Closing Letter",
@@ -266,13 +266,13 @@ export default function BookEditor() {
             ? [{ ...character, status: "locked" }]
             : kind === "scene"
               ? p.characters.filter((c) => page.characterIds.includes(c.id))
-              : p.characters.filter((c) => c.status === "locked"),
+              : [],
         visualStyle: p.visualStyle,
         scene:
           kind === "character"
             ? `${character.name}: ${character.description}. Six poses and expressions.`
             : kind === "style"
-              ? "A family discovers the Shanghai waterfront."
+              ? "An empty Shanghai waterfront landscape with a river, skyline and gentle trees. Background only; no people, characters, faces or animals."
               : page.sceneDescription,
         references:
           kind === "character"
@@ -294,7 +294,7 @@ export default function BookEditor() {
         );
         if (prior) {
           const recipe = prior.recipe || input;
-          const issues = sceneApprovalIssues(recipe);
+          const issues = generationApprovalIssues(recipe);
           if (issues.length)
             throw new Error(
               `${issues.join(" ")} Use Edit & Regenerate to apply your current approved references.`,
@@ -308,7 +308,7 @@ export default function BookEditor() {
           return;
         }
       }
-      const issues = sceneApprovalIssues(input);
+      const issues = generationApprovalIssues(input);
       if (issues.length) throw new Error(issues.join(" "));
       const v = await service.generate(input);
       if (kind === "character")
@@ -316,6 +316,7 @@ export default function BookEditor() {
           characterSheetImage: v.image,
           generationModel: v.model,
           generatedPrompt: v.prompt,
+          styleReference: v.styleReference,
         });
       if (kind === "style")
         change((p) => ({
@@ -323,6 +324,7 @@ export default function BookEditor() {
           visualStyle: {
             ...p.visualStyle,
             previewImage: v.image,
+            backgroundOnly: true,
             generationModel: v.model,
             generatedStylePrompt: v.prompt,
           },
@@ -367,15 +369,15 @@ export default function BookEditor() {
     (v) => v.id === page.selectedIllustrationId,
   );
   const isLocked =
-    step === 1
+    step === 2
       ? character.status === "locked"
-      : step === 2
+      : step === 1
         ? p.visualStyle.status === "locked"
         : step === 4
           ? page.status === "locked"
           : false;
   let right: React.ReactNode = <BookPage project={p} page={allPages[0]} />;
-  if (step === 1)
+  if (step === 2)
     right = (
       <div className="studio-preview">
         {character.characterSheetImage ? (
@@ -397,7 +399,7 @@ export default function BookEditor() {
         )}
       </div>
     );
-  if (step === 2)
+  if (step === 1)
     right = (
       <div className="studio-preview">
         {p.visualStyle.previewImage ? (
@@ -493,8 +495,8 @@ export default function BookEditor() {
           {
             [
               "Every adventure deserves a book.",
-              "The people who make it special.",
               "Give your story a little magic.",
+              "The people who make it special.",
               "Make room for every word.",
               "One little adventure at a time.",
               "A few words from the heart.",
@@ -508,8 +510,8 @@ export default function BookEditor() {
           {
             [
               "Start with a name, a feeling, and a little imagination.",
-              "Turn familiar faces into the heroes of your story.",
               "Choose a gentle visual world for your family’s adventure.",
+              "Turn familiar faces into the heroes of your story, in your chosen style.",
               "Let your words and pictures find their perfect balance.",
               "Tell the story on the left. Watch it come to life on the right.",
               "A letter she can return to, again and again.",
@@ -650,8 +652,20 @@ export default function BookEditor() {
               </button>
             </>
           )}
-          {step === 1 && (
+          {step === 2 && (
             <>
+              <p className="help">
+                Character sheets use your locked visual style and identity
+                photos. Lock your style first.
+              </p>
+              {character.characterSheetImage &&
+                character.styleReference !== p.visualStyle.previewImage && (
+                  <p className="help">
+                    This sheet uses an earlier style or was made without a style
+                    reference. Unlock and regenerate it to apply the current
+                    style.
+                  </p>
+                )}
               <div className="tabs">
                 {p.characters.map((c, i) => (
                   <button
@@ -762,11 +776,18 @@ export default function BookEditor() {
               </div>
             </>
           )}
-          {step === 2 && (
+          {step === 1 && (
             <>
               <p className="section-description">
-                Think soft colors, painted skies, and a world full of wonder.
+                Choose the colors, textures and backgrounds of your story. This
+                sample contains no characters.
               </p>
+              {p.visualStyle.previewImage && !p.visualStyle.backgroundOnly && (
+                <p className="help">
+                  This older sample may include characters. Unlock and
+                  regenerate it for a background-only reference.
+                </p>
+              )}
               <fieldset disabled={isLocked || !!busy}>
                 <Field label="What should your story look like?">
                   <textarea
@@ -1508,14 +1529,14 @@ export default function BookEditor() {
                 ? "This version is locked. Unlock it to make changes."
                 : step === 0
                   ? "A book only your family could make."
-                  : step === 1 || step === 2
-                    ? step === 1 && character.characterSheetImage
+                  : step === 2 || step === 1
+                    ? step === 2 && character.characterSheetImage
                       ? character.generationModel?.startsWith("mock")
                         ? "Sample illustration"
                         : character.generationModel
                           ? "AI illustration"
                           : "Saved illustration"
-                      : step === 2 && p.visualStyle.previewImage
+                      : step === 1 && p.visualStyle.previewImage
                         ? p.visualStyle.generationModel?.startsWith("mock")
                           ? "Sample illustration"
                           : p.visualStyle.generationModel
