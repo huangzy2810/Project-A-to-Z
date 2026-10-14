@@ -312,3 +312,42 @@ test("upstream model errors and nested network causes have safe actionable codes
     console.error = original;
   }
 });
+
+test("chapter approval checks prevent silent omission of character and style assets", async () => {
+  const { sceneApprovalIssues } = await import("../lib/recipe");
+  const p = createProject();
+  const input = { ...recipe(), characters: [p.characters[0]] };
+  assert.equal(sceneApprovalIssues(input).length, 2);
+  const approved = {
+    ...input,
+    characters: [
+      {
+        ...p.characters[0],
+        status: "locked" as const,
+        characterSheetImage: "ava-sheet",
+      },
+    ],
+    visualStyle: {
+      ...p.visualStyle,
+      status: "locked" as const,
+      previewImage: "approved-style",
+    },
+  };
+  assert.deepEqual(sceneApprovalIssues(approved), []);
+  assert.deepEqual(
+    referenceAssets(approved).map((r) => r.id),
+    ["ava-sheet", "approved-style"],
+  );
+  assert.match(assemblePrompt(approved), /Approved style takes precedence/);
+  const snapshot = structuredClone(approved);
+  approved.visualStyle.previewImage = "new-style";
+  approved.characters[0].characterSheetImage = "new-sheet";
+  assert.deepEqual(
+    referenceAssets(snapshot).map((r) => r.id),
+    ["ava-sheet", "approved-style"],
+  );
+  assert.deepEqual(
+    referenceAssets(approved).map((r) => r.id),
+    ["new-sheet", "new-style"],
+  );
+});

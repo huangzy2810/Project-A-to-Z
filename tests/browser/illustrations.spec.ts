@@ -204,3 +204,22 @@ test("automatic mode refreshes its label if the credential becomes unavailable",
   ).toBeEnabled();
   expect(posts).toBe(0);
 });
+
+test("chapter generation blocks missing approvals and shows reference requirements", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: /Chapter$/ }).click();
+  await page.getByRole("checkbox", { name: "Ava" }).check();
+  await expect(
+    page.getByLabel("Chapter illustration references"),
+  ).toContainText("Ava (needs approval)");
+  await page.getByRole("button", { name: "Generate", exact: true }).click();
+  await expect(page.locator(".global-error")).toContainText(
+    "Generate and lock a visual style",
+  );
+  await expect(page.locator(".global-error")).toContainText(
+    "Generate and lock Ava",
+  );
+  await expect(page.locator(".versions button")).toHaveCount(0);
+});

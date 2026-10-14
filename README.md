@@ -51,6 +51,8 @@ The Book Drawer and numbered progress navigation provide direct access to every 
 
 Meaningful edits autosave with a short debounce; pagehide flushes current metadata. Reload restores the project. Corrupted metadata is retained rather than silently replaced. The UI reports upload, storage, generation and export errors. Reset Project requires confirmation and clears local metadata and image assets.
 
+Chapter generation requires a locked visual-style sample and locked character sheets for every selected character. The Chapter Builder shows current approvals and the selected version’s actual reference list. Select the characters explicitly; unselected characters have no identity attachments. Try Again keeps the selected version’s saved approvals, while Edit & Regenerate applies current approvals. Scene photographs do not override the approved visual treatment.
+
 Locked assets cannot be edited or regenerated until manually unlocked. Locked pages also snapshot typography. Global changes leave existing locked pages unchanged. Generation history is retained for story pages.
 
 ## Validation

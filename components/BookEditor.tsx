@@ -25,6 +25,7 @@ import {
 import { AssetImage, BookPage, orderedPages, RenderPage } from "./BookPage";
 import DropZone from "./DropZone";
 import { exportPdf } from "@/lib/pdf";
+import { sceneApprovalIssues, referenceAssets } from "@/lib/recipe";
 const steps = [
   "Book Setup",
   "Character Studio",
@@ -292,11 +293,13 @@ export default function BookEditor() {
           (v) => v.id === page.selectedIllustrationId,
         );
         if (prior) {
-          const version = await service.generate(prior.recipe || input);
-          version.prompt = prior.prompt;
-          version.characterReferences = prior.characterReferences;
-          version.styleReference = prior.styleReference;
-          version.sceneReferences = prior.sceneReferences;
+          const recipe = prior.recipe || input;
+          const issues = sceneApprovalIssues(recipe);
+          if (issues.length)
+            throw new Error(
+              `${issues.join(" ")} Use Edit & Regenerate to apply your current approved references.`,
+            );
+          const version = await service.generate(recipe);
           patchPage({
             illustrationVersions: [...page.illustrationVersions, version],
             selectedIllustrationId: version.id,
@@ -305,6 +308,8 @@ export default function BookEditor() {
           return;
         }
       }
+      const issues = sceneApprovalIssues(input);
+      if (issues.length) throw new Error(issues.join(" "));
       const v = await service.generate(input);
       if (kind === "character")
         patchCharacter({
@@ -1100,6 +1105,50 @@ export default function BookEditor() {
                       {c.status === "locked" ? " ✓" : ""}
                     </label>
                   ))}
+                </div>
+                <div
+                  className="reference-summary"
+                  aria-label="Chapter illustration references"
+                >
+                  <strong>
+                    References for Generate / Edit &amp; Regenerate
+                  </strong>
+                  <p>
+                    Style:{" "}
+                    {p.visualStyle.status === "locked" &&
+                    p.visualStyle.previewImage
+                      ? "Approved style sample"
+                      : "Not approved — generate and lock your style first"}
+                  </p>
+                  <p>
+                    Characters:{" "}
+                    {page.characterIds.length
+                      ? p.characters
+                          .filter((c) => page.characterIds.includes(c.id))
+                          .map(
+                            (c) =>
+                              `${c.name} (${c.status === "locked" && c.characterSheetImage ? "approved sheet" : "needs approval"})`,
+                          )
+                          .join(", ")
+                      : "None selected — no character identity images will be sent"}
+                  </p>
+                  {selected && (
+                    <p>
+                      Try Again keeps the character and style references saved
+                      with this selected version. Use Edit &amp; Regenerate to
+                      apply newer approvals.
+                    </p>
+                  )}
+                  {selected?.recipe && (
+                    <details>
+                      <summary>References used by selected version</summary>
+                      {referenceAssets(selected.recipe).map((r, i) => (
+                        <p key={r.id}>
+                          {i + 1}. {r.label}
+                        </p>
+                      ))}
+                    </details>
+                  )}
                 </div>
                 <DropZone
                   disabled={isLocked || !!busy}

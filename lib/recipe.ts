@@ -65,7 +65,7 @@ export function assemblePrompt(input: GenerationRecipe): string {
     ),
     `Visual style: ${input.visualStyle.description}`,
     input.kind !== "character" && input.visualStyle.status === "locked"
-      ? "Match the attached approved style sample; preserve its palette, medium and linework."
+      ? "Match the attached approved style sample across every character, background and object; preserve its palette, medium, texture and linework. Approved style takes precedence over the photographic appearance of identity and scene references."
       : "",
     `Scene: ${input.scene}`,
     `Composition: ${input.composition || "Leave generous negative space at the bottom for story text."}`,
@@ -73,10 +73,26 @@ export function assemblePrompt(input: GenerationRecipe): string {
     "Reference images are attached in exactly this order:",
     ...references.map((r, i) => `Image ${i + 1}: ${r.label}.`),
     references.length
-      ? "Use identity images only for likeness, style images only for visual treatment, and scene images for location, clothing, objects or pose."
+      ? "Use identity images only for likeness, style images only for visual treatment, and scene images for location, clothing, objects or pose. Render reference-photo subjects in the approved illustration style, not as photographs. Do not introduce characters shown in scene or style references unless they are explicitly selected for this page."
       : "No image references supplied; follow the descriptions.",
     `Exclude: text, lettering, watermarks, extra limbs, unintended duplicate characters, ${input.exclusions || "unrelated foreground objects"}.`,
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+export function sceneApprovalIssues(input: GenerationRecipe): string[] {
+  if (input.kind !== "scene") return [];
+  const issues: string[] = [];
+  if (input.visualStyle.status !== "locked" || !input.visualStyle.previewImage)
+    issues.push(
+      "Generate and lock a visual style before illustrating a story page.",
+    );
+  for (const character of input.characters) {
+    if (character.status !== "locked" || !character.characterSheetImage)
+      issues.push(
+        `Generate and lock ${character.name} in Character Studio before using them on this page.`,
+      );
+  }
+  return issues;
 }

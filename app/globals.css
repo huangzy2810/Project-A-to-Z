@@ -1167,3 +1167,15 @@ footer > span {
   margin-top: 8px;
   color: #4f6c55;
 }
+
+.reference-summary {
+  background: #eef1e7;
+  border-left: 2px solid #8ea184;
+  padding: 12px 14px;
+  margin: 10px 0 15px;
+  font-size: 11px;
+}
+.reference-summary p {
+  color: #6d7566;
+  font-size: 10px;
+}
