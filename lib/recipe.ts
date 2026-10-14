@@ -41,17 +41,6 @@ export function referenceAssets(input: GenerationRecipe): ReferenceAsset[] {
         );
     }
   }
-  if (input.kind === "scene") {
-    // Keep every canonical sheet ahead of supporting photos and all style/scene references.
-    for (const character of input.characters.filter(
-      (c) => c.status === "locked",
-    )) {
-      add(
-        character.primaryReferencePhoto,
-        `${character.name}: supporting identity photo`,
-      );
-    }
-  }
   if (input.kind === "style" || input.visualStyle.status === "locked") {
     if (input.kind !== "style")
       add(input.visualStyle.previewImage, "Approved visual style sample");
@@ -77,28 +66,24 @@ export function assemblePrompt(input: GenerationRecipe): string {
   return [
     "Create one square children’s storybook illustration. Render artwork only; story text is added separately.",
     input.kind === "character"
-      ? "Make a canonical character sheet with six consistent views: front, three-quarter, side, smiling, neutral, and full body. Keep the same person in every view. Do not add labels."
+      ? "Generate exactly one face-only identity portrait in the approved illustration style. Show the face, natural hair and ears, cropped tightly below the chin, on a plain neutral background. No neck, shoulders, torso, full body, clothing, collars, hats, jewelry, accessories, props, scenery, additional people or labels. Extract facial identity from uploaded photos and ignore their clothing and surroundings. Facial identity takes precedence over any clothing or non-face details in the description."
       : input.kind === "style"
         ? "Create an uninhabited background-only sample of the requested illustration style. No people, characters, faces, silhouettes or animals, even if they appear in uploaded style references."
         : "Illustrate this story scene with only the requested characters.",
     ...input.characters.map((c) =>
       c.status === "locked"
-        ? `Preserve character identity: ${c.name}, ${c.description}. Keep facial features, hairstyle, approximate age and body proportions consistent with their attached references.`
+        ? `Preserve character identity: ${c.name}${input.kind === "scene" ? "" : `, ${c.description}`}. Keep facial features, hairstyle, approximate age and facial proportions consistent with their attached references.`
         : `Character: ${c.name}, ${c.description}.`,
     ),
     ...(input.kind === "scene"
       ? [
-          "CHARACTER IDENTITY CONTRACT: The approved character sheets are the source of truth for identity. Draw each selected person once unless the scene explicitly requires otherwise. Keep each face, hair, skin tone, approximate age, proportions and distinctive features unchanged. Never exchange identities between characters or invent substitute faces.",
+          "CHARACTER IDENTITY CONTRACT: The approved character sheets are the source of truth for identity. Draw each selected person once unless the scene explicitly requires otherwise. Keep each face, hair, skin tone, approximate age and distinctive facial features unchanged. Never exchange identities between characters or invent substitute faces.",
           ...input.characters.map((c, index) => {
             const canonical =
               references.findIndex((r) => r.id === c.characterSheetImage) + 1;
-            const photo = c.primaryReferencePhoto
-              ? references.findIndex((r) => r.id === c.primaryReferencePhoto) +
-                1
-              : 0;
-            return `Character ${index + 1}: ${c.name}. Canonical identity = Image ${canonical}. ${photo ? `Supporting likeness = Image ${photo}.` : ""} Use the character sheet's identity and design; supporting photos clarify likeness without overriding the approved design. Description: ${c.description}.`;
+            return `Character ${index + 1}: ${c.name}. Canonical identity = Image ${canonical}. Use only the approved face's facial identity, hair and skin tone. Do not copy clothing, accessories, body poses or background elements from identity references.`;
           }),
-          "Reference hierarchy: canonical sheets govern identity; approved style governs medium, palette and texture only; scene photographs govern setting and composition only. Never borrow faces or people from style or scene references. Verify every selected character against their assigned sheet before completing the image.",
+          "Reference hierarchy: canonical face references govern facial identity only; clothing, outfits and accessories must come from the chapter scene and scene references, never from character identity images; approved style governs medium, palette and texture only; scene photographs govern setting and composition only. Never borrow faces or people from style or scene references. Verify every selected character against their assigned sheet before completing the image.",
         ]
       : []),
     `Visual style: ${input.visualStyle.description}`,

@@ -288,7 +288,7 @@ export default function BookEditor() {
         visualStyle: p.visualStyle,
         scene:
           kind === "character"
-            ? `${character.name}: ${character.description}. Six poses and expressions.`
+            ? `${character.name}: ${character.description}. A single tightly cropped face-only identity portrait. No clothing, body, accessories or scenery.`
             : kind === "style"
               ? "An empty Shanghai waterfront landscape with a river, skyline and gentle trees. Background only; no people, characters, faces or animals."
               : page.sceneDescription,
@@ -340,6 +340,7 @@ export default function BookEditor() {
           generationModel: v.model,
           generatedPrompt: v.prompt,
           styleReference: v.styleReference,
+          faceOnly: true,
         });
       if (kind === "style")
         change((p) => ({
@@ -417,7 +418,7 @@ export default function BookEditor() {
               <br />
               One wonderful little character.
             </p>
-            <small>Your character sheet will appear here.</small>
+            <small>Your face-only reference will appear here.</small>
           </div>
         )}
       </div>
@@ -678,9 +679,15 @@ export default function BookEditor() {
           {step === 2 && (
             <>
               <p className="help">
-                Character sheets use your locked visual style and identity
-                photos. Lock your style first.
+                Generate one face-only portrait using your locked style and
+                photos. Clothing, bodies, accessories and scenery are excluded.
               </p>
+              {character.characterSheetImage && !character.faceOnly && (
+                <p className="help">
+                  This older reference may contain clothing or a body. Unlock
+                  and regenerate it as a face-only portrait.
+                </p>
+              )}
               {character.characterSheetImage &&
                 character.styleReference !== p.visualStyle.previewImage && (
                   <p className="help">

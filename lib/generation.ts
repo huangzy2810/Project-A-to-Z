@@ -172,27 +172,31 @@ export const mockIllustrationService: IllustrationService = {
       );
       c.stroke();
     }
+    if (input.kind === "character") {
+      c.fillStyle = "#fffaf0";
+      c.fillRect(0, 0, 2400, 2400);
+    }
     const poses =
       input.kind === "style"
         ? 0
         : input.kind === "character"
-          ? 6
+          ? 1
           : Math.max(1, input.characters.length);
     for (let n = 0; n < poses; n++) {
-      const x =
-        input.kind === "character" ? 480 + (n % 3) * 720 : 900 + n * 350;
-      const y =
-        input.kind === "character" ? 820 + Math.floor(n / 3) * 980 : 1660;
+      const x = input.kind === "character" ? 1200 : 900 + n * 350;
+      const y = input.kind === "character" ? 1950 : 1660;
       const adult =
         input.characters[n]?.name !== "Ava" && input.kind !== "character";
-      const size = adult ? 1.2 : 1;
+      const size = input.kind === "character" ? 10 : adult ? 1.2 : 1;
       c.save();
       c.translate(x, y);
       c.scale(size, size);
-      c.fillStyle = ["#ca846e", "#7d9990", "#c4a36f"][n % 3];
-      c.beginPath();
-      c.roundRect(-80, 0, 160, 220, 55);
-      c.fill();
+      if (input.kind !== "character") {
+        c.fillStyle = ["#ca846e", "#7d9990", "#c4a36f"][n % 3];
+        c.beginPath();
+        c.roundRect(-80, 0, 160, 220, 55);
+        c.fill();
+      }
       c.fillStyle = "#ebc49f";
       c.beginPath();
       c.arc(0, -75, 85, 0, Math.PI * 2);
@@ -212,8 +216,10 @@ export const mockIllustrationService: IllustrationService = {
       c.arc(0, -47, 22, 0, Math.PI);
       c.stroke();
       c.fillStyle = "#54473b";
-      c.fillRect(-58, 205, 35, 95);
-      c.fillRect(23, 205, 35, 95);
+      if (input.kind !== "character") {
+        c.fillRect(-58, 205, 35, 95);
+        c.fillRect(23, 205, 35, 95);
+      }
       c.restore();
     }
     const blob = await new Promise<Blob>((resolve, reject) =>

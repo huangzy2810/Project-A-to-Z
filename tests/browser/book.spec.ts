@@ -55,6 +55,19 @@ test("complete local book workflow, reload, locked pages and square PDF", async 
       page.getByRole("button", { name: "Unlock Character", exact: true }),
     ).toBeVisible();
   }
+  await page.getByRole("button", { name: "Ava ✓", exact: true }).click();
+  const cleanBackground = await page
+    .getByAltText("Ava character sheet")
+    .evaluate(async (image: HTMLImageElement) => {
+      await image.decode();
+      const canvas = document.createElement("canvas");
+      canvas.width = image.naturalWidth;
+      canvas.height = image.naturalHeight;
+      const context = canvas.getContext("2d")!;
+      context.drawImage(image, 0, 0);
+      return Array.from(context.getImageData(1200, 2200, 1, 1).data);
+    });
+  expect(cleanBackground).toEqual([255, 250, 240, 255]);
   await page.getByRole("button", { name: /Chapter$/ }).click();
   for (const name of ["Ava", "Mama", "Papa"])
     await page.getByRole("checkbox", { name }).check();

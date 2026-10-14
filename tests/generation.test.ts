@@ -60,11 +60,11 @@ test("references have explicit roles, deduplicate and preserve identity-first or
   };
   assert.deepEqual(
     referenceAssets(input).map((r) => r.id),
-    ["sheet", "portrait", "style", "inspiration", "scene"],
+    ["sheet", "style", "inspiration", "scene"],
   );
   const prompt = assemblePrompt(input);
   assert.match(prompt, /Image 1: Ava: approved identity reference/);
-  assert.match(prompt, /Image 5: Scene reference 1/);
+  assert.match(prompt, /Image 4: Scene reference 1/);
   assert.doesNotMatch(prompt, /identity reference.*Mama/);
   assert.match(prompt, /Character: Mama/);
   assert.match(prompt, /no|Exclude/);
@@ -424,7 +424,7 @@ test("character generation uses locked style in addition to identity photos and 
   assert.equal(called, false);
 });
 
-test("every scene character has explicit numbered sheet and primary-photo identity bindings", () => {
+test("every scene character has numbered canonical identity bindings without clothing-bearing raw photos", () => {
   const p = createProject();
   const input = {
     ...recipe(),
@@ -443,30 +443,12 @@ test("every scene character has explicit numbered sheet and primary-photo identi
   };
   assert.deepEqual(
     referenceAssets(input).map((r) => r.id),
-    [
-      "sheet-0",
-      "sheet-1",
-      "sheet-2",
-      "photo-0",
-      "photo-1",
-      "photo-2",
-      "style",
-      "location",
-    ],
+    ["sheet-0", "sheet-1", "sheet-2", "style", "location"],
   );
   const prompt = assemblePrompt(input);
-  assert.match(
-    prompt,
-    /Ava\. Canonical identity = Image 1\. Supporting likeness = Image 4/,
-  );
-  assert.match(
-    prompt,
-    /Mama\. Canonical identity = Image 2\. Supporting likeness = Image 5/,
-  );
-  assert.match(
-    prompt,
-    /Papa\. Canonical identity = Image 3\. Supporting likeness = Image 6/,
-  );
+  assert.match(prompt, /Ava\. Canonical identity = Image 1/);
+  assert.match(prompt, /Mama\. Canonical identity = Image 2/);
+  assert.match(prompt, /Papa\. Canonical identity = Image 3/);
   assert.match(prompt, /Never exchange identities/);
 });
 test("retries detect changed or unlocked Character Studio identities without changing the saved recipe", async () => {
@@ -518,4 +500,34 @@ test("scene name detection respects whole names and literal punctuation", async 
   assert.deepEqual(unselectedSceneCharacters("Dr. Lin smiles.", [dotted], []), [
     "Dr. Lin",
   ]);
+});
+
+test("character portraits exclude clothing and chapter identity references never supply outfits", () => {
+  const p = createProject();
+  const character = {
+    ...p.characters[0],
+    status: "locked" as const,
+    characterSheetImage: "face",
+    primaryReferencePhoto: "clothed-photo",
+    description: "Ava wearing a red coat",
+  };
+  const portrait = {
+    ...recipe(),
+    kind: "character" as const,
+    characters: [character],
+  };
+  assert.match(assemblePrompt(portrait), /exactly one face-only/);
+  assert.match(
+    assemblePrompt(portrait),
+    /No neck, shoulders, torso, full body, clothing/,
+  );
+  const scene = { ...recipe(), characters: [character] };
+  assert.deepEqual(
+    referenceAssets(scene).map((r) => r.id),
+    ["face"],
+  );
+  assert.match(
+    assemblePrompt(scene),
+    /outfits and accessories must come from the chapter scene/,
+  );
 });

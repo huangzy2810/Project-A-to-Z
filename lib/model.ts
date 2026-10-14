@@ -11,6 +11,7 @@ export interface Typography {
   defaultTextPosition: Position;
 }
 export interface Character {
+  faceOnly?: boolean;
   styleReference?: string;
   generationModel?: string;
   id: string;
