@@ -53,7 +53,11 @@ export interface GenerationRecipe {
   kind?: "character" | "style" | "scene";
 }
 export interface IllustrationVersion {
-  referenceManifest?: { id: string; label: string }[];
+  referenceManifest?: {
+    id: string;
+    label: string;
+    role?: "identity" | "style" | "scene-layout" | "original";
+  }[];
   width?: number;
   height?: number;
   recipe?: GenerationRecipe;

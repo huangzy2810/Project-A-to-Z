@@ -3,6 +3,7 @@ export const MAX_REFERENCES = 16;
 export interface ReferenceAsset {
   id: string;
   label: string;
+  role: "identity" | "style" | "scene-layout" | "original";
 }
 export function prepareGenerationRecipe(
   input: GenerationRecipe,
@@ -20,32 +21,45 @@ export function prepareGenerationRecipe(
 export function referenceAssets(input: GenerationRecipe): ReferenceAsset[] {
   input = prepareGenerationRecipe(input);
   const references: ReferenceAsset[] = [];
-  const add = (id: string | undefined, label: string) => {
+  const add = (
+    id: string | undefined,
+    label: string,
+    role: ReferenceAsset["role"],
+  ) => {
     if (id && !references.some((r) => r.id === id))
-      references.push({ id, label });
+      references.push({ id, label, role });
   };
   for (const c of input.characters.filter((c) => c.status === "locked")) {
     if (input.kind === "character") {
-      add(c.primaryReferencePhoto, `${c.name}: primary identity photo`);
+      add(
+        c.primaryReferencePhoto,
+        `${c.name}: primary identity photo`,
+        "identity",
+      );
       c.referencePhotos.forEach((id, i) =>
-        add(id, `${c.name}: identity photo ${i + 1}`),
+        add(id, `${c.name}: identity photo ${i + 1}`, "identity"),
       );
     } else {
       add(
         c.characterSheetImage || c.primaryReferencePhoto,
         `${c.name}: approved identity reference`,
+        "identity",
       );
       if (!c.characterSheetImage)
         c.referencePhotos.forEach((id, i) =>
-          add(id, `${c.name}: identity photo ${i + 1}`),
+          add(id, `${c.name}: identity photo ${i + 1}`, "identity"),
         );
     }
   }
   if (input.kind === "style" || input.visualStyle.status === "locked") {
     if (input.kind !== "style")
-      add(input.visualStyle.previewImage, "Approved visual style sample");
+      add(
+        input.visualStyle.previewImage,
+        "Approved visual style sample",
+        "style",
+      );
     input.visualStyle.referenceImages.forEach((id, i) =>
-      add(id, `Visual style reference ${i + 1}`),
+      add(id, `Visual style reference ${i + 1}`, "style"),
     );
   }
   input.references.forEach((id, i) =>
@@ -55,7 +69,12 @@ export function referenceAssets(input: GenerationRecipe): ReferenceAsset[] {
         ? `Character identity photo ${i + 1}`
         : input.kind === "style"
           ? `Visual style reference ${i + 1}`
-          : `Scene reference ${i + 1}`,
+          : `Scene reference ${i + 1} (background, placement and clothing only)`,
+      input.kind === "character"
+        ? "identity"
+        : input.kind === "style"
+          ? "style"
+          : "scene-layout",
     ),
   );
   return references;
@@ -94,7 +113,7 @@ export function assemblePrompt(input: GenerationRecipe): string {
               offset;
             return `Character ${index + 1}: ${c.name}. Canonical identity = Image ${canonical}. Use only the approved face's facial identity, hair and skin tone. Do not copy clothing, accessories, body poses or background elements from identity references.`;
           }),
-          "Reference hierarchy: canonical face references govern facial identity only; clothing, outfits and accessories must come from the chapter scene and scene references, never from character identity images; approved style governs medium, palette and texture only; scene photographs govern setting and composition only. Never borrow faces or people from style or scene references. Verify every selected character against their assigned sheet before completing the image.",
+          "Reference hierarchy: canonical face references govern facial identity only; clothing, outfits and accessories may come from scene photographs, while explicit written scene descriptions and required elements take priority; never copy clothing from character identity images; approved style governs medium, palette and texture only; scene photographs govern backgrounds, objects, camera framing, character placement and clothing only. Never borrow faces or people from style or scene references. Verify every selected character against their assigned sheet before completing the image.",
         ]
       : []),
     `Visual style: ${input.visualStyle.description}`,
@@ -111,8 +130,15 @@ export function assemblePrompt(input: GenerationRecipe): string {
         ]
       : []),
     ...references.map((r, i) => `Image ${i + 1 + offset}: ${r.label}.`),
+    ...references.flatMap((r, i) =>
+      r.role === "scene-layout"
+        ? [
+            `SCENE-ONLY REFERENCE — Image ${i + 1 + offset}: use background, architecture, environment, objects, perspective, spatial placement and clothing. Photographed people may supply position, scale, outfits and accessories only, never identity. Discard their faces, hair, skin tone, age, gender and body shape. Dress the selected approved characters in the referenced clothing without copying the photographed wearer. Match outfits to named characters using the written scene; if the mapping is ambiguous, follow the written clothing description rather than guessing an identity. Derive every face and hairstyle exclusively from its numbered approved identity sheet. Source-photo crowds do not determine the story cast. Explicit written scene instructions override source-photo clothing and placement.`,
+          ]
+        : [],
+    ),
     references.length
-      ? "Use identity images only for likeness, style images only for visual treatment, and scene images for location, clothing, objects or pose. Render reference-photo subjects in the approved illustration style, not as photographs. Do not introduce characters shown in scene or style references unless they are explicitly selected for this page."
+      ? "Use approved identity images exclusively for facial identity, hair, skin tone and age, and style images only for visual treatment. Use scene images for backgrounds, spatial placement and clothing, never photographed people’s likeness or physical features. Transfer garments and accessories onto the approved cast without copying the wearer’s identity. Render only selected approved characters. Explicit written outfits and actions take priority."
       : "No image references supplied; follow the descriptions.",
     `Exclude: text, lettering, watermarks, extra limbs, unintended duplicate characters, ${input.exclusions || "unrelated foreground objects"}.`,
   ]
@@ -204,6 +230,7 @@ export function generationReferenceManifest(
         {
           id: input.tweak.sourceImage,
           label: "Original illustration to repair",
+          role: "original",
         },
         ...referenceAssets(input),
       ]

@@ -24,7 +24,14 @@ test("AI client sends image references, retains retries and history, and never f
     const inspect = await request.clone().formData();
     requests.push(JSON.parse(inspect.get("recipe") as string));
     const handler = createIllustrationHandler(() => ({
-      async generate(_prompt, images) {
+      async generate(prompt, images) {
+        if (requests.at(-1)?.kind === "scene") {
+          expect(prompt).toContain("SCENE-ONLY REFERENCE — Image 4");
+          expect(prompt).toContain(
+            "outfits and accessories only, never identity",
+          );
+          expect(prompt).toContain("Canonical identity = Image 1");
+        }
         imageCounts.push(images.length);
         return {
           bytes: Uint8Array.from(photo),
@@ -121,7 +128,7 @@ test("AI client sends image references, retains retries and history, and never f
     "Ava: approved identity reference",
     "Approved visual style sample",
     "Visual style reference 1",
-    "Scene reference 1",
+    "Scene reference 1 (background, placement and clothing only)",
   ]);
   const originalScene = requests[2].scene;
   await page

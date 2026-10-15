@@ -1154,6 +1154,10 @@ export default function BookEditor() {
                     onChange={(e) => patchChapter({ theme: e.target.value })}
                   />
                 </Field>
+                <p className="help">
+                  Chapter photos guide backgrounds, placement and clothing.
+                  Character identity always comes from approved face sheets.
+                </p>
                 <DropZone
                   images={chapter.referencePhotos}
                   onChange={(ids) => patchChapter({ referencePhotos: ids })}
@@ -1286,6 +1290,12 @@ export default function BookEditor() {
                     </details>
                   )}
                 </div>
+                <p className="help">
+                  Scene photos guide backgrounds, character placement and
+                  clothing. Faces and hair come from the checked characters’
+                  approved face sheets. Describe who wears which outfit in “What
+                  happens on this page?”; written outfits override the photo.
+                </p>
                 <DropZone
                   disabled={isLocked || !!busy}
                   images={page.referencePhotos}

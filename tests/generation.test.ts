@@ -528,6 +528,62 @@ test("character portraits exclude clothing and chapter identity references never
   );
   assert.match(
     assemblePrompt(scene),
-    /outfits and accessories must come from the chapter scene/,
+    /outfits and accessories may come from scene photographs/,
   );
+});
+
+test("scene photos supply clothing and placement without supplying identity", () => {
+  const p = createProject();
+  const input = {
+    ...recipe(),
+    characters: [
+      {
+        ...p.characters[0],
+        status: "locked" as const,
+        characterSheetImage: "ava-face",
+      },
+    ],
+    visualStyle: {
+      ...p.visualStyle,
+      status: "locked" as const,
+      previewImage: "style-sample",
+    },
+    references: ["chapter-photo", "page-photo"],
+  };
+  assert.deepEqual(
+    referenceAssets(input).map((r) => r.role),
+    ["identity", "style", "scene-layout", "scene-layout"],
+  );
+  const prompt = assemblePrompt(input);
+  assert.match(prompt, /SCENE-ONLY REFERENCE — Image 3/);
+  assert.match(prompt, /SCENE-ONLY REFERENCE — Image 4/);
+  assert.match(
+    prompt,
+    /position, scale, outfits and accessories only, never identity/,
+  );
+  assert.match(
+    prompt,
+    /Discard their faces, hair, skin tone, age, gender and body shape/,
+  );
+  assert.match(prompt, /Source-photo crowds do not determine the story cast/);
+  assert.match(
+    prompt,
+    /Explicit written scene instructions override source-photo clothing and placement/,
+  );
+  assert.match(prompt, /without copying the photographed wearer/);
+  assert.doesNotMatch(
+    prompt,
+    /scene images for location, clothing, objects or pose/,
+  );
+  const tweak = {
+    ...input,
+    tweak: {
+      sourceImage: "original",
+      sourceVersionId: "version",
+      feedback: "Fix the face",
+      region: { x: 0.2, y: 0.2, width: 0.2, height: 0.2 },
+    },
+  };
+  assert.match(assemblePrompt(tweak), /SCENE-ONLY REFERENCE — Image 4/);
+  assert.match(assemblePrompt(tweak), /SCENE-ONLY REFERENCE — Image 5/);
 });
