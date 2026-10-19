@@ -60,11 +60,11 @@ test("references have explicit roles, deduplicate and preserve identity-first or
   };
   assert.deepEqual(
     referenceAssets(input).map((r) => r.id),
-    ["sheet", "style", "inspiration", "scene"],
+    ["sheet", "style", "inspiration"],
   );
   const prompt = assemblePrompt(input);
   assert.match(prompt, /Image 1: Ava: approved identity reference/);
-  assert.match(prompt, /Image 4: Scene reference 1/);
+  assert.doesNotMatch(prompt, /Scene reference/);
   assert.doesNotMatch(prompt, /identity reference.*Mama/);
   assert.match(prompt, /Character: Mama/);
   assert.match(prompt, /no|Exclude/);
@@ -106,9 +106,17 @@ test("handler sends validated references and recipe to provider and returns unca
     },
   }));
   const response = await handle(
-    request({ ...recipe(), references: ["photo"] }, [
-      new File([png], "photo.png", { type: "image/png" }),
-    ]),
+    request(
+      {
+        ...recipe(),
+        visualStyle: {
+          ...createProject().visualStyle,
+          status: "locked",
+          previewImage: "photo",
+        },
+      },
+      [new File([png], "photo.png", { type: "image/png" })],
+    ),
   );
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("content-type"), "image/png");
@@ -126,15 +134,34 @@ test("missing, forged and excessive references do not invoke provider", async ()
     },
   }));
   assert.equal(
-    (await handle(request({ ...recipe(), references: ["photo"] }))).status,
+    (
+      await handle(
+        request({
+          ...recipe(),
+          visualStyle: {
+            ...createProject().visualStyle,
+            status: "locked",
+            previewImage: "photo",
+          },
+        }),
+      )
+    ).status,
     400,
   );
   assert.equal(
     (
       await handle(
-        request({ ...recipe(), references: ["photo"] }, [
-          new File(["bad"], "bad.png", { type: "image/png" }),
-        ]),
+        request(
+          {
+            ...recipe(),
+            visualStyle: {
+              ...createProject().visualStyle,
+              status: "locked",
+              previewImage: "photo",
+            },
+          },
+          [new File(["bad"], "bad.png", { type: "image/png" })],
+        ),
       )
     ).status,
     400,
@@ -443,7 +470,7 @@ test("every scene character has numbered canonical identity bindings without clo
   };
   assert.deepEqual(
     referenceAssets(input).map((r) => r.id),
-    ["sheet-0", "sheet-1", "sheet-2", "style", "location"],
+    ["sheet-0", "sheet-1", "sheet-2", "style"],
   );
   const prompt = assemblePrompt(input);
   assert.match(prompt, /Ava\. Canonical identity = Image 1/);
@@ -532,7 +559,9 @@ test("character portraits exclude clothing and chapter identity references never
   );
 });
 
-test("scene photos supply clothing and placement without supplying identity", () => {
+test("scene photos never enter generation manifests or prompts, including legacy retries and tweaks", async () => {
+  const { prepareGenerationRecipe, generationReferenceManifest } =
+    await import("../lib/recipe");
   const p = createProject();
   const input = {
     ...recipe(),
@@ -551,30 +580,23 @@ test("scene photos supply clothing and placement without supplying identity", ()
     references: ["chapter-photo", "page-photo"],
   };
   assert.deepEqual(
-    referenceAssets(input).map((r) => r.role),
-    ["identity", "style", "scene-layout", "scene-layout"],
+    referenceAssets(input).map((r) => r.id),
+    ["ava-face", "style-sample"],
   );
+  assert.deepEqual(prepareGenerationRecipe(input).references, []);
+  assert.deepEqual(
+    prepareGenerationRecipe({ ...input, kind: undefined }).references,
+    [],
+  );
+  assert.deepEqual(input.references, ["chapter-photo", "page-photo"]);
   const prompt = assemblePrompt(input);
-  assert.match(prompt, /SCENE-ONLY REFERENCE — Image 3/);
-  assert.match(prompt, /SCENE-ONLY REFERENCE — Image 4/);
-  assert.match(
-    prompt,
-    /position, scale, outfits and accessories only, never identity/,
-  );
-  assert.match(
-    prompt,
-    /Discard their faces, hair, skin tone, age, gender and body shape/,
-  );
-  assert.match(prompt, /Source-photo crowds do not determine the story cast/);
-  assert.match(
-    prompt,
-    /Explicit written scene instructions override source-photo clothing and placement/,
-  );
-  assert.match(prompt, /without copying the photographed wearer/);
   assert.doesNotMatch(
     prompt,
-    /scene images for location, clothing, objects or pose/,
+    /SCENE-ONLY REFERENCE|Scene reference|chapter-photo|page-photo/,
   );
+  assert.match(prompt, /Canonical identity = Image 1/);
+  assert.match(prompt, /CHARACTER IDENTITY CONTRACT/);
+  assert.match(prompt, /Visual style:/);
   const tweak = {
     ...input,
     tweak: {
@@ -584,6 +606,38 @@ test("scene photos supply clothing and placement without supplying identity", ()
       region: { x: 0.2, y: 0.2, width: 0.2, height: 0.2 },
     },
   };
-  assert.match(assemblePrompt(tweak), /SCENE-ONLY REFERENCE — Image 4/);
-  assert.match(assemblePrompt(tweak), /SCENE-ONLY REFERENCE — Image 5/);
+  assert.deepEqual(
+    generationReferenceManifest(tweak).map((r) => r.id),
+    ["original", "ava-face", "style-sample"],
+  );
+  assert.match(assemblePrompt(tweak), /Canonical identity = Image 2/);
+  assert.doesNotMatch(
+    assemblePrompt(tweak),
+    /SCENE-ONLY REFERENCE|Scene reference/,
+  );
+  let calls = 0;
+  const handle = createIllustrationHandler(() => ({
+    async generate(sentPrompt, images) {
+      calls++;
+      assert.equal(images.length, 2);
+      assert.equal(sentPrompt, prompt);
+      return { bytes: png, model: IMAGE_MODEL };
+    },
+  }));
+  const files = ["face", "style"].map(
+    (name) => new File([png], `${name}.png`, { type: "image/png" }),
+  );
+  assert.equal((await handle(request(input, files))).status, 200);
+  assert.equal(
+    (
+      await handle(
+        request(input, [
+          ...files,
+          new File([png], "scene.png", { type: "image/png" }),
+        ]),
+      )
+    ).status,
+    400,
+  );
+  assert.equal(calls, 1);
 });

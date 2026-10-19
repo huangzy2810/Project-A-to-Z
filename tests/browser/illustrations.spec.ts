@@ -26,10 +26,8 @@ test("AI client sends image references, retains retries and history, and never f
     const handler = createIllustrationHandler(() => ({
       async generate(prompt, images) {
         if (requests.at(-1)?.kind === "scene") {
-          expect(prompt).toContain("SCENE-ONLY REFERENCE — Image 4");
-          expect(prompt).toContain(
-            "outfits and accessories only, never identity",
-          );
+          expect(prompt).not.toContain("SCENE-ONLY REFERENCE");
+          expect(requests.at(-1)?.references).toEqual([]);
           expect(prompt).toContain("Canonical identity = Image 1");
         }
         imageCounts.push(images.length);
@@ -56,6 +54,12 @@ test("AI client sends image references, retains retries and history, and never f
       body: Buffer.from(await response.arrayBuffer()),
     });
   });
+  await page.route("**/api/scene-description", (route) =>
+    route.fulfill({
+      status: 503,
+      json: { error: "Photo drafting not configured for this test." },
+    }),
+  );
   await page.goto("/");
   const photo = Buffer.from(
     await page.evaluate(() => {
@@ -123,12 +127,11 @@ test("AI client sends image references, retains retries and history, and never f
   await expect(page.getByAltText("Reference photo 1")).toBeVisible();
   await page.getByRole("button", { name: "Generate", exact: true }).click();
   await expect(page.locator(".versions button")).toHaveCount(1);
-  expect(imageCounts[2]).toBe(4);
+  expect(imageCounts[2]).toBe(3);
   expect(referenceAssets(requests[2]).map((r) => r.label)).toEqual([
     "Ava: approved identity reference",
     "Approved visual style sample",
     "Visual style reference 1",
-    "Scene reference 1 (background, placement and clothing only)",
   ]);
   const originalScene = requests[2].scene;
   await page
@@ -193,7 +196,7 @@ test("AI client sends image references, retains retries and history, and never f
   await expect
     .poll(() =>
       page.evaluate(() => {
-        const p = JSON.parse(localStorage.getItem("ava-book-project-v1")!);
+        const p = JSON.parse(localStorage.getItem("ava-book-project-v3")!);
         return (
           p.chapters[0].pages[0].illustrationVersions.at(-1).recipe
             .characters[0].characterSheetImage ===

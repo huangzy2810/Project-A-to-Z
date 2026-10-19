@@ -41,7 +41,7 @@ test("prompt uses approved selected identities, references and exclusions", () =
   });
   assert.match(prompt, /Preserve character identity: Ava/);
   assert.doesNotMatch(prompt, /Preserve character identity: Mama/);
-  assert.match(prompt, /Scene reference 1/);
+  assert.doesNotMatch(prompt, /Scene reference 1/);
   assert.match(prompt, /red scarf/);
   assert.match(prompt, /no|Exclude/);
 });

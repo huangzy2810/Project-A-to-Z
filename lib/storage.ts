@@ -1,8 +1,8 @@
 import { assertProject, BookProject } from "./model";
-export const PROJECT_KEY = "ava-book-project-v1";
+export const PROJECT_KEY = "ava-book-project-v3";
 function database(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const r = indexedDB.open("ava-book-assets", 1);
+    const r = indexedDB.open("ava-book-assets-v3", 1);
     r.onupgradeneeded = () => r.result.createObjectStore("assets");
     r.onsuccess = () => resolve(r.result);
     r.onerror = () =>

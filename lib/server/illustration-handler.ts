@@ -66,7 +66,7 @@ function errorResponse(status: number, message: string) {
     { status, headers: { "Cache-Control": "no-store" } },
   );
 }
-async function limitedForm(request: Request) {
+export async function limitedForm(request: Request) {
   if (Number(request.headers.get("content-length")) > MAX_BODY)
     throw new ImageGenerationError(
       413,
@@ -103,7 +103,7 @@ async function limitedForm(request: Request) {
     headers: { "Content-Type": type },
   }).formData();
 }
-async function verifyImage(file: File) {
+export async function verifyImage(file: File) {
   const bytes = new Uint8Array(await file.slice(0, 12).arrayBuffer());
   const png =
     bytes[0] === 137 && bytes[1] === 80 && bytes[2] === 78 && bytes[3] === 71;

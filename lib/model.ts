@@ -71,6 +71,7 @@ export interface IllustrationVersion {
   createdAt: string;
 }
 export interface StoryPage {
+  scenePhotoDraft?: { description: string; photoIds: string[] };
   id: string;
   chapterId: string;
   pageNumber: number;
@@ -284,6 +285,10 @@ export function assertProject(value: unknown): asserts value is BookProject {
             !Array.isArray(s.characterIds) ||
             !Array.isArray(s.referencePhotos) ||
             !Array.isArray(s.illustrationVersions) ||
+            (s.scenePhotoDraft !== undefined &&
+              (!s.scenePhotoDraft ||
+                typeof s.scenePhotoDraft.description !== "string" ||
+                !Array.isArray(s.scenePhotoDraft.photoIds))) ||
             !["draft", "locked"].includes(s.status),
         ),
     )

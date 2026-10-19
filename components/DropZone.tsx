@@ -5,12 +5,14 @@ import { AssetImage } from "./BookPage";
 export default function DropZone({
   images,
   onChange,
+  onUploaded,
   primary,
   onPrimary,
   disabled = false,
 }: {
   images: string[];
   onChange: (ids: string[]) => void;
+  onUploaded?: (ids: string[]) => void | Promise<void>;
   primary?: string;
   onPrimary?: (id: string) => void;
   disabled?: boolean;
@@ -27,6 +29,7 @@ export default function DropZone({
       for (const file of Array.from(files))
         ids.push(await putAsset(await normalizeImage(file)));
       onChange([...images, ...ids]);
+      await onUploaded?.([...images, ...ids]);
     } catch (e) {
       setError(
         e instanceof Error ? e.message : "Upload failed. Please try again.",

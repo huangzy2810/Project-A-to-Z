@@ -8,6 +8,8 @@ export interface ReferenceAsset {
 export function prepareGenerationRecipe(
   input: GenerationRecipe,
 ): GenerationRecipe {
+  if (input.kind === "scene" || !input.kind)
+    return { ...input, kind: "scene", references: [] };
   if (input.kind !== "style") return input;
   return {
     ...input,

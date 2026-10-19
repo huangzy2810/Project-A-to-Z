@@ -1,5 +1,6 @@
 "use client";
 import ImageTweaker from "./ImageTweaker";
+import { describeScenePhotos } from "@/lib/scene-description";
 import type { ImageRegion } from "@/lib/regions";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -244,6 +245,43 @@ export default function BookEditor() {
   function patchPage(patch: Partial<StoryPage>) {
     change((p) => updatePage(p, page.id, patch));
   }
+  async function draftScene(photoIds: string[]) {
+    if (generationRef.current || page.status === "locked") return;
+    generationRef.current = true;
+    setBusy("photo-draft");
+    setError("");
+    const targetId = page.id;
+    try {
+      const description = await describeScenePhotos(
+        [...new Set(photoIds)],
+        p.characters
+          .filter((c) => page.characterIds.includes(c.id))
+          .map((c) => c.name),
+      );
+      change((current) => {
+        const target = current.chapters
+          .flatMap((c) => c.pages)
+          .find((s) => s.id === targetId);
+        if (!target || target.status === "locked") return current;
+        return updatePage(
+          current,
+          targetId,
+          target.sceneDescription.trim()
+            ? { scenePhotoDraft: { description, photoIds } }
+            : { sceneDescription: description, scenePhotoDraft: undefined },
+        );
+      });
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? e.message
+          : "Photo analysis failed. Your scene text is safe.",
+      );
+    } finally {
+      setBusy("");
+      generationRef.current = false;
+    }
+  }
   async function generate(
     kind: "character" | "style" | "scene",
     retry = false,
@@ -299,7 +337,7 @@ export default function BookEditor() {
             ? character.referencePhotos
             : kind === "style"
               ? p.visualStyle.referenceImages
-              : [...chapter.referencePhotos, ...page.referencePhotos],
+              : [],
         composition:
           kind === "scene"
             ? `${page.compositionNotes} Leave negative space ${p.typography.defaultTextPosition === "top" ? "at the top" : "at the bottom"} for story text.`
@@ -574,7 +612,9 @@ export default function BookEditor() {
         </button>
       </header>
       <div className="intro">
-        <span className="eyebrow">AVA’S SHANGHAI ADVENTURE BOOK CREATOR</span>
+        <span className="eyebrow">
+          AVA’S SHANGHAI ADVENTURE BOOK CREATOR · MVP v3
+        </span>
         <h1>
           {
             [
@@ -1155,12 +1195,17 @@ export default function BookEditor() {
                   />
                 </Field>
                 <p className="help">
-                  Chapter photos guide backgrounds, placement and clothing.
-                  Character identity always comes from approved face sheets.
+                  Upload photos to draft a scene for the current page. Photos
+                  are analyzed for details, but are never attached to
+                  illustration requests. Keep up to four scene photos per draft.
                 </p>
                 <DropZone
+                  disabled={isLocked || !!busy}
                   images={chapter.referencePhotos}
                   onChange={(ids) => patchChapter({ referencePhotos: ids })}
+                  onUploaded={(ids) =>
+                    draftScene([...ids, ...page.referencePhotos])
+                  }
                 />
               </details>
               <div className="tabs">
@@ -1200,6 +1245,39 @@ export default function BookEditor() {
                     }
                   />
                 </Field>
+                {page.scenePhotoDraft && (
+                  <div
+                    className="reference-summary"
+                    aria-label="Scene photo draft"
+                  >
+                    <strong>Scene draft from your photos</strong>
+                    <p>
+                      Your current scene text is unchanged. Review this draft,
+                      then use it and refine the scene above. Replace positional
+                      labels with character names where needed.
+                    </p>
+                    <p style={{ whiteSpace: "pre-wrap" }}>
+                      {page.scenePhotoDraft.description}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        patchPage({
+                          sceneDescription: page.scenePhotoDraft!.description,
+                          scenePhotoDraft: undefined,
+                        })
+                      }
+                    >
+                      Use photo draft
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => patchPage({ scenePhotoDraft: undefined })}
+                    >
+                      Discard photo draft
+                    </button>
+                  </div>
+                )}
                 <Field
                   label="The words on this page"
                   hint="Keep it short and sweet; a little space lets the picture breathe."
@@ -1265,6 +1343,11 @@ export default function BookEditor() {
                           .join(", ")
                       : "None selected — no character identity images will be sent"}
                   </p>
+                  <p>
+                    Scene photos are used for text drafting only and are not
+                    attached to illustration requests, including retries and
+                    tweaks.
+                  </p>
                   {selected && (
                     <p>
                       Try Again keeps the character and style references saved
@@ -1291,16 +1374,48 @@ export default function BookEditor() {
                   )}
                 </div>
                 <p className="help">
-                  Scene photos guide backgrounds, character placement and
-                  clothing. Faces and hair come from the checked characters’
-                  approved face sheets. Describe who wears which outfit in “What
-                  happens on this page?”; written outfits override the photo.
+                  Upload up to four scene photos to draft clothing, poses,
+                  location, background and composition. Review and refine the
+                  text before illustrating. Only the scene text, approved
+                  character sheets and style references go to image generation;
+                  scene photos do not. Photo drafting uses AI even in sample
+                  artwork mode.
                 </p>
                 <DropZone
                   disabled={isLocked || !!busy}
                   images={page.referencePhotos}
                   onChange={(ids) => patchPage({ referencePhotos: ids })}
+                  onUploaded={(ids) =>
+                    draftScene([...chapter.referencePhotos, ...ids])
+                  }
                 />
+                <button
+                  type="button"
+                  disabled={
+                    isLocked ||
+                    !!busy ||
+                    !(
+                      chapter.referencePhotos.length +
+                      page.referencePhotos.length
+                    )
+                  }
+                  onClick={() =>
+                    draftScene([
+                      ...chapter.referencePhotos,
+                      ...page.referencePhotos,
+                    ])
+                  }
+                >
+                  {busy === "photo-draft"
+                    ? "Reading scene photos…"
+                    : "Draft scene from photos"}
+                </button>
+                {busy === "photo-draft" && (
+                  <p role="status">
+                    Reading scene photos to draft the details. Your existing
+                    text will be kept for review.
+                  </p>
+                )}
                 <details>
                   <summary>A few extra details (optional)</summary>
                   <Field label="Composition notes">
@@ -1825,7 +1940,9 @@ export default function BookEditor() {
                 }
               >
                 <option value="auto">AI illustrations when configured</option>
-                <option value="mock">Sample artwork · no API calls</option>
+                <option value="mock">
+                  Sample artwork · local illustrations
+                </option>
               </select>
             </Field>
             <p className="help">

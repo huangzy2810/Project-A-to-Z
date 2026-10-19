@@ -34,7 +34,7 @@ test("masked feedback repairs preserve unselected pixels, history, feedback and 
         characters: [character],
         visualStyle: book.visualStyle,
         scene: story.sceneDescription,
-        references: [],
+        references: ["legacy-scene-photo-not-attached"],
         composition: "Wide",
         exclusions: "",
       },
@@ -103,7 +103,7 @@ test("masked feedback repairs preserve unselected pixels, history, feedback and 
   });
   await page.addInitScript((project) => {
     if (!localStorage.getItem("tweak-test-seeded")) {
-      localStorage.setItem("ava-book-project-v1", JSON.stringify(project));
+      localStorage.setItem("ava-book-project-v3", JSON.stringify(project));
       localStorage.setItem("tweak-test-seeded", "true");
     }
   }, book);
@@ -119,7 +119,7 @@ test("masked feedback repairs preserve unselected pixels, history, feedback and 
       c.toBlob((b) => r(b!), "image/png"),
     );
     const db = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open("ava-book-assets", 1);
+      const request = indexedDB.open("ava-book-assets-v3", 1);
       request.onupgradeneeded = () =>
         request.result.createObjectStore("assets");
       request.onsuccess = () => resolve(request.result);
@@ -133,7 +133,7 @@ test("masked feedback repairs preserve unselected pixels, history, feedback and 
       transaction.onerror = () => reject(transaction.error);
     });
     db.close();
-    localStorage.setItem("ava-book-project-v1", JSON.stringify(project));
+    localStorage.setItem("ava-book-project-v3", JSON.stringify(project));
   }, book);
   await page.reload();
   await page.getByRole("button", { name: /Chapter$/ }).click();
@@ -173,16 +173,16 @@ test("masked feedback repairs preserve unselected pixels, history, feedback and 
     .poll(() =>
       page.evaluate(
         () =>
-          JSON.parse(localStorage.getItem("ava-book-project-v1")!).chapters[0]
+          JSON.parse(localStorage.getItem("ava-book-project-v3")!).chapters[0]
             .pages[0].illustrationVersions.length,
       ),
     )
     .toBe(2);
   const pixels = await page.evaluate(async () => {
-    const project = JSON.parse(localStorage.getItem("ava-book-project-v1")!);
+    const project = JSON.parse(localStorage.getItem("ava-book-project-v3")!);
     const versions = project.chapters[0].pages[0].illustrationVersions;
     const db = await new Promise<IDBDatabase>((resolve) => {
-      const r = indexedDB.open("ava-book-assets", 1);
+      const r = indexedDB.open("ava-book-assets-v3", 1);
       r.onsuccess = () => resolve(r.result);
     });
     const read = (id: string) =>

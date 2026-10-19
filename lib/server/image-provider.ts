@@ -49,10 +49,10 @@ function diagnosticCode(error: unknown): string {
     return `OPENAI_HTTP_${error.status}`;
   return "IMAGE_TRANSPORT_ERROR";
 }
-export function createOpenAIProvider(
+export function createOpenAIClient(
   apiKey: string,
   transport?: typeof globalThis.fetch,
-): ImageProvider {
+) {
   const useProxy = Boolean(
     process.env.HTTPS_PROXY ||
     process.env.HTTP_PROXY ||
@@ -60,7 +60,7 @@ export function createOpenAIProvider(
     process.env.http_proxy,
   );
   if (useProxy && !transport) dispatcher ??= new EnvHttpProxyAgent();
-  const client = new OpenAI({
+  return new OpenAI({
     apiKey,
     timeout: 180_000,
     maxRetries: 0,
@@ -77,6 +77,12 @@ export function createOpenAIProvider(
               { ...init, dispatcher } as Parameters<typeof proxyFetch>[1],
             )) as unknown as typeof globalThis.fetch)),
   });
+}
+export function createOpenAIProvider(
+  apiKey: string,
+  transport?: typeof globalThis.fetch,
+): ImageProvider {
+  const client = createOpenAIClient(apiKey, transport);
   return {
     async generate(prompt, references, signal, mask) {
       try {

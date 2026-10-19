@@ -154,14 +154,14 @@ test("corrupted saves are preserved and reset requires confirmation", async ({
   page,
 }) => {
   await page.addInitScript(() =>
-    localStorage.setItem("ava-book-project-v1", "{broken"),
+    localStorage.setItem("ava-book-project-v3", "{broken"),
   );
   await page.goto("/");
   await expect(
     page.getByRole("heading", { name: "Your saved book needs attention" }),
   ).toBeVisible();
   expect(
-    await page.evaluate(() => localStorage.getItem("ava-book-project-v1")),
+    await page.evaluate(() => localStorage.getItem("ava-book-project-v3")),
   ).toBe("{broken");
   page.once("dialog", (d) => d.dismiss());
   await page.getByRole("button", { name: "Reset Project" }).click();
