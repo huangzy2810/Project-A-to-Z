@@ -224,7 +224,7 @@ test("concurrent requests do not create duplicate paid generations", async () =>
   release();
   assert.equal((await first).status, 200);
 });
-test("OpenAI adapter uses generation or multipart editing with high fidelity and no retries", async () => {
+test("Flare adapter uses generation or multipart editing without legacy fidelity and with no retries", async () => {
   const calls: { url: string; init?: RequestInit }[] = [];
   const transport: typeof fetch = async (input, init) => {
     if (String(input).startsWith("data:")) return fetch(input, init);
@@ -247,7 +247,7 @@ test("OpenAI adapter uses generation or multipart editing with high fidelity and
   assert.match(calls[1].url, /\/images\/edits$/);
   const form = calls[1].init!.body as FormData;
   assert.equal(form.get("model"), "gpt-image-2.5-flare");
-  assert.equal(form.get("input_fidelity"), "high");
+  assert.equal(form.has("input_fidelity"), false);
   assert.equal(form.get("prompt"), "Use this likeness");
   assert.equal(
     Array.from(form.values()).filter((v) => v instanceof File).length,
@@ -641,4 +641,127 @@ test("scene photos never enter generation manifests or prompts, including legacy
     400,
   );
   assert.equal(calls, 1);
+});
+
+test("Flare reference edits succeed against an API that rejects legacy input_fidelity", async () => {
+  let calls = 0;
+  const transport: typeof fetch = async (_url, init) => {
+    if (String(_url).startsWith("data:")) return fetch(_url, init);
+    calls++;
+    const form = init!.body as FormData;
+    if (form.has("input_fidelity"))
+      return Response.json(
+        {
+          error: {
+            message: "Unknown parameter",
+            param: "input_fidelity",
+            code: "unsupported_parameter",
+          },
+        },
+        { status: 400 },
+      );
+    assert.equal(form.get("model"), "gpt-image-2.5-flare");
+    assert.equal(form.get("size"), "1024x1024");
+    assert.equal(form.get("quality"), "high");
+    assert.ok(form.get("image[]") instanceof File);
+    return Response.json({ data: [{ b64_json: png.toString("base64") }] });
+  };
+  const result = await createOpenAIProvider(
+    "test-only-credential",
+    transport,
+  ).generate(
+    "Illustrate Ava with the approved sheet",
+    [new File([png], "face.png", { type: "image/png" })],
+    new AbortController().signal,
+  );
+  assert.equal(result.model, IMAGE_MODEL);
+  assert.deepEqual(Buffer.from(result.bytes), png);
+  assert.equal(calls, 1);
+});
+
+test("HTTP 400 diagnostics distinguish model, settings, image and moderation without exposing arbitrary values", async () => {
+  const original = console.error;
+  const logs: unknown[][] = [];
+  console.error = (...args) => {
+    logs.push(args);
+  };
+  try {
+    const cases = [
+      {
+        param: "input_fidelity",
+        code: "unsupported_parameter",
+        expected: /parameter "input_fidelity".*unsupported_parameter/,
+      },
+      {
+        param: "quality",
+        code: "unsupported_value",
+        expected: /parameter "quality".*unsupported_value/,
+      },
+      {
+        param: "model",
+        code: "model_not_found",
+        expected: /configured image model.*gpt-image-2.5-flare/,
+      },
+      {
+        param: "image[0]",
+        code: "invalid_image",
+        expected: /rejected a reference image/,
+      },
+      {
+        param: "mask",
+        code: "invalid_value",
+        expected: /rejected the edit mask/,
+      },
+      {
+        param: "prompt",
+        code: "content_policy_violation",
+        expected: /content rules/,
+      },
+      {
+        param: "secret-test-key",
+        code: "private-upstream-detail",
+        expected: /without a recognized parameter or reason/,
+      },
+    ];
+    for (const scenario of cases) {
+      let calls = 0;
+      const provider = createOpenAIProvider("secret-test-key", async () => {
+        calls++;
+        return Response.json(
+          {
+            error: {
+              message: "private scene and secret-test-key",
+              param: scenario.param,
+              code: scenario.code,
+            },
+          },
+          { status: 400 },
+        );
+      });
+      await assert.rejects(
+        provider.generate("private scene", [], new AbortController().signal),
+        (error) => {
+          assert.ok(error instanceof ImageGenerationError);
+          assert.equal(error.status, 422);
+          assert.match(error.message, scenario.expected);
+          assert.match(error.message, /OPENAI_HTTP_400/);
+          assert.doesNotMatch(
+            error.message,
+            /secret-test-key|private scene|private-upstream-detail/,
+          );
+          return true;
+        },
+      );
+      assert.equal(calls, 1);
+    }
+    const output = JSON.stringify(logs);
+    assert.match(output, /input_fidelity/);
+    assert.match(output, /unsupported_parameter/);
+    assert.doesNotMatch(
+      output,
+      /secret-test-key|private scene|private-upstream-detail/,
+    );
+  } finally {
+    console.error = original;
+  }
 });
