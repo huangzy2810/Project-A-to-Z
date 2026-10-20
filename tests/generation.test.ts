@@ -235,7 +235,7 @@ test("OpenAI adapter uses generation or multipart editing with high fidelity and
   await provider.generate("Draw a storybook", [], new AbortController().signal);
   assert.match(calls[0].url, /\/images\/generations$/);
   const body = JSON.parse(calls[0].init!.body as string);
-  assert.equal(body.model, IMAGE_MODEL);
+  assert.equal(body.model, "gpt-image-2.5-flare");
   assert.equal(body.size, "1024x1024");
   assert.equal(body.n, 1);
   assert.equal(body.output_format, "png");
@@ -246,6 +246,7 @@ test("OpenAI adapter uses generation or multipart editing with high fidelity and
   );
   assert.match(calls[1].url, /\/images\/edits$/);
   const form = calls[1].init!.body as FormData;
+  assert.equal(form.get("model"), "gpt-image-2.5-flare");
   assert.equal(form.get("input_fidelity"), "high");
   assert.equal(form.get("prompt"), "Use this likeness");
   assert.equal(

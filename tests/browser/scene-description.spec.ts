@@ -96,13 +96,13 @@ test("photo draft is reviewable, editable and saved while scene photos never rea
       ]);
       expect(prompt).toContain("Canonical identity = Image 1");
       expect(prompt).not.toContain("SCENE-ONLY REFERENCE");
-      return { bytes: png, model: "gpt-image-1.5" };
+      return { bytes: png, model: "gpt-image-2.5-flare" };
     },
   }));
   await page.route("**/api/illustrations", async (route) => {
     if (route.request().method() === "GET")
       return route.fulfill({
-        json: { available: true, provider: "OpenAI", model: "gpt-image-1.5" },
+        json: { available: true, provider: "OpenAI", model: "gpt-image-2.5-flare" },
       });
     const request = new Request(route.request().url(), {
       method: "POST",
@@ -164,7 +164,7 @@ test("failed analysis keeps uploads and text; retry fills an empty scene and pho
   let calls = 0;
   await page.route("**/api/illustrations", (route) =>
     route.fulfill({
-      json: { available: false, provider: "OpenAI", model: "gpt-image-1.5" },
+      json: { available: false, provider: "OpenAI", model: "gpt-image-2.5-flare" },
     }),
   );
   await page.route("**/api/scene-description", (route) => {

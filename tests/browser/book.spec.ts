@@ -7,7 +7,7 @@ test.beforeEach(async ({ page }) => {
           json: {
             available: false,
             provider: "OpenAI",
-            model: "gpt-image-1.5",
+            model: "gpt-image-2.5-flare",
           },
         })
       : route.fulfill({

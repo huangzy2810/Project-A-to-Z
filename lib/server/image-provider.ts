@@ -1,7 +1,7 @@
 // Server-only provider: imported only by the API route and provider tests.
 import OpenAI from "openai";
 import { EnvHttpProxyAgent, fetch as proxyFetch } from "undici";
-export const IMAGE_MODEL = "gpt-image-1.5";
+export const IMAGE_MODEL = "gpt-image-2.5-flare";
 export interface ImageProvider {
   generate(
     prompt: string,
