@@ -1219,3 +1219,38 @@ footer > span {
   padding: 8px !important;
   margin-top: 6px;
 }
+
+.generation-queue {
+  margin: 1rem auto;
+  padding: 1rem 1.25rem;
+  max-width: 1400px;
+  border: 1px solid var(--line, #ded6ca);
+  border-radius: 12px;
+  background: var(--paper, #fffaf1);
+  overflow-wrap: anywhere;
+}
+.generation-queue summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.generation-queue p {
+  margin: 0.75rem 0;
+}
+.generation-queue button {
+  margin: 0.4rem 0.5rem 0.4rem 0;
+}
+.generation-queue ol {
+  max-height: 18rem;
+  overflow-y: auto;
+  padding-left: 1.5rem;
+}
+.generation-queue li {
+  margin: 0.5rem 0;
+}
+.generation-queue small {
+  display: block;
+}
+.generation-queue input[type="checkbox"] {
+  width: auto;
+  margin-right: 0.5rem;
+}

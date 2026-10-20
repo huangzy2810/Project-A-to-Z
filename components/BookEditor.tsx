@@ -1,5 +1,16 @@
 "use client";
 import ImageTweaker from "./ImageTweaker";
+import { BulkRegeneration, GenerationQueuePanel } from "./GenerationQueuePanel";
+import {
+  GenerationQueue,
+  makeChapterJob,
+  pendingJob,
+  queueStorageKey,
+  restoreQueue,
+  jobApprovalIssues,
+  applyQueuedVersion,
+  type GenerationJob,
+} from "@/lib/generation-queue";
 import { describeScenePhotos } from "@/lib/scene-description";
 import type { ImageRegion } from "@/lib/regions";
 import { useEffect, useRef, useState } from "react";
@@ -32,7 +43,6 @@ import {
   generationApprovalIssues,
   referenceAssets,
   retryIdentityIssues,
-  unselectedSceneCharacters,
 } from "@/lib/recipe";
 const steps = [
   "Book Setup",
@@ -83,6 +93,9 @@ export default function BookEditor() {
   const [exportProgress, setExportProgress] = useState(0);
   const exportRoot = useRef<HTMLDivElement>(null);
   const generationRef = useRef(false);
+  const queueRef = useRef<GenerationQueue | null>(null);
+  const [jobs, setJobs] = useState<GenerationJob[]>([]);
+  const queueActive = jobs.some(pendingJob);
   const latestProject = useRef<BookProject | null>(null);
   latestProject.current = project;
   useEffect(() => {
@@ -105,6 +118,87 @@ export default function BookEditor() {
     }
     setReady(true);
   }, []);
+  useEffect(() => {
+    if (!project?.id) return;
+    const key = queueStorageKey(project.id);
+    let live = true;
+    try {
+      const restored = restoreQueue(localStorage.getItem(key), project.id);
+      const queue = new GenerationQueue(
+        restored,
+        async (job) => {
+          const current = latestProject.current;
+          if (!live || !current)
+            throw new Error("This book is no longer open.");
+          const issues = jobApprovalIssues(current, job);
+          if (issues.length) throw new Error(issues.join(" "));
+          if (generationRef.current)
+            throw new Error(
+              "Another generation is active. Retry this queued page after it finishes.",
+            );
+          generationRef.current = true;
+          try {
+            const service = await illustrationService(
+              job.mode,
+              setGenerationInfo,
+            );
+            const version = await service.generate(job.recipe);
+            if (!live || !latestProject.current)
+              throw new Error("This book is no longer open.");
+            const next = applyQueuedVersion(
+              latestProject.current,
+              job,
+              version,
+            );
+            saveProject(next);
+            latestProject.current = next;
+            setProject(next);
+          } catch (e) {
+            setError(
+              `${job.label}: ${e instanceof Error ? e.message : "Generation failed."}`,
+            );
+            throw e;
+          } finally {
+            generationRef.current = false;
+          }
+        },
+        (next) => {
+          localStorage.setItem(key, JSON.stringify(next));
+          if (live) setJobs(structuredClone(next));
+        },
+        () => {
+          if (queueRef.current) setJobs(structuredClone(queueRef.current.jobs));
+          setError(
+            "The generation queue could not be saved. Processing stopped; check browser storage before retrying.",
+          );
+        },
+      );
+      queueRef.current = queue;
+      localStorage.setItem(key, JSON.stringify(restored));
+      setJobs(restored);
+      return () => {
+        live = false;
+        queue.dispose();
+        if (queueRef.current === queue) queueRef.current = null;
+      };
+    } catch (e) {
+      queueRef.current?.dispose();
+      queueRef.current = null;
+      setJobs([]);
+      setError(
+        e instanceof Error ? e.message : "Could not open the generation queue.",
+      );
+    }
+  }, [project?.id]);
+  useEffect(() => {
+    if (!queueActive) return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [queueActive]);
   useEffect(() => {
     if (!project || !ready || storageBlocked) return;
     setSaveState("Saving…");
@@ -163,9 +257,12 @@ export default function BookEditor() {
     return () => document.removeEventListener("keydown", keyboard);
   }, [drawer, settings]);
   function change(fn: (p: BookProject) => BookProject) {
-    setProject((p) =>
-      p ? { ...fn(p), updatedAt: new Date().toISOString() } : p,
-    );
+    const current = latestProject.current;
+    if (current) {
+      const next = { ...fn(current), updatedAt: new Date().toISOString() };
+      latestProject.current = next;
+      setProject(next);
+    }
   }
   function go(n: number) {
     setStep(n);
@@ -182,6 +279,7 @@ export default function BookEditor() {
     try {
       await clearAssets();
       localStorage.removeItem(PROJECT_KEY);
+      if (project) localStorage.removeItem(queueStorageKey(project.id));
       setProject(createProject());
       setStorageBlocked(false);
       setStep(0);
@@ -220,6 +318,10 @@ export default function BookEditor() {
   const character = p.characters[characterIndex] || p.characters[0];
   const chapter = p.chapters[chapterIndex] || p.chapters[0];
   const page = chapter?.pages[pageIndex] || chapter?.pages[0];
+  const pageQueued = jobs.some(
+    (job) => job.pageId === page?.id && pendingJob(job),
+  );
+  const operationBusy = !!busy || queueActive;
   const allPages = orderedPages(p);
   const preview = allPages[Math.min(previewIndex, allPages.length - 1)];
   function patchCharacter(patch: Partial<Character>) {
@@ -246,7 +348,8 @@ export default function BookEditor() {
     change((p) => updatePage(p, page.id, patch));
   }
   async function draftScene(photoIds: string[]) {
-    if (generationRef.current || page.status === "locked") return;
+    if (generationRef.current || queueActive || page.status === "locked")
+      return;
     generationRef.current = true;
     setBusy("photo-draft");
     setError("");
@@ -282,34 +385,46 @@ export default function BookEditor() {
       generationRef.current = false;
     }
   }
+  function queueJobs(next: GenerationJob[]) {
+    try {
+      if (busy) throw new Error("Wait for the current operation to finish.");
+      if (!queueRef.current)
+        throw new Error(
+          "The generation queue is unavailable. Check browser storage.",
+        );
+      queueRef.current.enqueue(next);
+      setError("");
+    } catch (e) {
+      setError(
+        e instanceof Error ? e.message : "Could not queue illustrations.",
+      );
+    }
+  }
+  function queueAction(action: () => void) {
+    try {
+      action();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not update the queue.");
+    }
+  }
   async function generate(
     kind: "character" | "style" | "scene",
     retry = false,
   ) {
-    if (generationRef.current) return;
+    if (kind === "scene") {
+      try {
+        queueJobs([makeChapterJob(p, page, false, retry)]);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Could not queue this page.");
+      }
+      return;
+    }
+    if (generationRef.current || queueActive) return;
     if (
       (kind === "character" && character.status === "locked") ||
-      (kind === "style" && p.visualStyle.status === "locked") ||
-      (kind === "scene" && page.status === "locked")
+      (kind === "style" && p.visualStyle.status === "locked")
     )
       return;
-    if (kind === "scene" && !page.sceneDescription.trim()) {
-      setError("Tell us what happens on this page first.");
-      return;
-    }
-    if (kind === "scene" && !retry) {
-      const missing = unselectedSceneCharacters(
-        page.sceneDescription,
-        p.characters,
-        page.characterIds,
-      );
-      if (missing.length) {
-        setError(
-          `Select ${missing.join(", ")} under “Who appears in this scene?” so their approved identities are included, or remove them from the scene description.`,
-        );
-        return;
-      }
-    }
     generationRef.current = true;
     setBusy(kind);
     setError("");
@@ -320,57 +435,21 @@ export default function BookEditor() {
       );
       const input: GenerationInput = {
         characters:
-          kind === "character"
-            ? [{ ...character, status: "locked" }]
-            : kind === "scene"
-              ? p.characters.filter((c) => page.characterIds.includes(c.id))
-              : [],
+          kind === "character" ? [{ ...character, status: "locked" }] : [],
         visualStyle: p.visualStyle,
         scene:
           kind === "character"
             ? `${character.name}: ${character.description}. A four-view face-only identity sheet: front, three-quarter, profile, and smiling. No clothing, body, accessories or scenery.`
-            : kind === "style"
-              ? "An empty Shanghai waterfront landscape with a river, skyline and gentle trees. Background only; no people, characters, faces or animals."
-              : page.sceneDescription,
+            : "An empty Shanghai waterfront landscape with a river, skyline and gentle trees. Background only; no people, characters, faces or animals.",
         references:
           kind === "character"
             ? character.referencePhotos
-            : kind === "style"
-              ? p.visualStyle.referenceImages
-              : [],
-        composition:
-          kind === "scene"
-            ? `${page.compositionNotes} Leave negative space ${p.typography.defaultTextPosition === "top" ? "at the top" : "at the bottom"} for story text.`
-            : "Gentle storybook composition",
-        requiredElements: kind === "scene" ? page.requiredElements : "",
-        exclusions: kind === "scene" ? page.excludedElements : "",
+            : p.visualStyle.referenceImages,
+        composition: "Gentle storybook composition",
+        requiredElements: "",
+        exclusions: "",
         kind,
       };
-      if (retry && kind === "scene") {
-        const prior = page.illustrationVersions.find(
-          (v) => v.id === page.selectedIllustrationId,
-        );
-        if (prior) {
-          const identityIssues = retryIdentityIssues(
-            prior.recipe,
-            p.characters,
-          );
-          if (identityIssues.length) throw new Error(identityIssues.join(" "));
-          const recipe = prior.recipe!;
-          const issues = generationApprovalIssues(recipe);
-          if (issues.length)
-            throw new Error(
-              `${issues.join(" ")} Use Edit & Regenerate to apply your current approved references.`,
-            );
-          const version = await service.generate(recipe);
-          patchPage({
-            illustrationVersions: [...page.illustrationVersions, version],
-            selectedIllustrationId: version.id,
-            generatedPrompt: version.prompt,
-          });
-          return;
-        }
-      }
       const issues = generationApprovalIssues(input);
       if (issues.length) throw new Error(issues.join(" "));
       const v = await service.generate(input);
@@ -394,12 +473,6 @@ export default function BookEditor() {
             generatedStylePrompt: v.prompt,
           },
         }));
-      if (kind === "scene")
-        patchPage({
-          illustrationVersions: [...page.illustrationVersions, v],
-          selectedIllustrationId: v.id,
-          generatedPrompt: v.prompt,
-        });
     } catch (e) {
       setError(
         e instanceof Error
@@ -415,7 +488,12 @@ export default function BookEditor() {
     feedback: string,
     region: ImageRegion,
   ): Promise<boolean> {
-    if (generationRef.current || page.status === "locked" || !selected)
+    if (
+      generationRef.current ||
+      queueActive ||
+      page.status === "locked" ||
+      !selected
+    )
       return false;
     generationRef.current = true;
     setBusy("tweak");
@@ -673,6 +751,13 @@ export default function BookEditor() {
           </button>
         </div>
       )}
+      <GenerationQueuePanel
+        jobs={jobs}
+        disabled={!!busy}
+        onStop={() => queueAction(() => queueRef.current?.stop())}
+        onResume={() => queueAction(() => queueRef.current?.resume())}
+        onRetry={(id) => queueAction(() => queueRef.current?.retry(id))}
+      />
       <main className="spread">
         <section className="input-page">
           <div className="page-heading">
@@ -808,7 +893,7 @@ export default function BookEditor() {
               <div className="tabs">
                 {p.characters.map((c, i) => (
                   <button
-                    disabled={!!busy}
+                    disabled={operationBusy}
                     key={c.id}
                     className={characterIndex === i ? "selected" : ""}
                     onClick={() => setCharacterIndex(i)}
@@ -818,7 +903,7 @@ export default function BookEditor() {
                   </button>
                 ))}
                 <button
-                  disabled={!!busy}
+                  disabled={operationBusy}
                   onClick={() => {
                     const name = prompt("What is their name?");
                     if (name?.trim()) {
@@ -843,7 +928,7 @@ export default function BookEditor() {
                   + Add
                 </button>
               </div>
-              <fieldset disabled={isLocked || !!busy}>
+              <fieldset disabled={isLocked || operationBusy}>
                 <Field label="Character name">
                   <input
                     value={character.name}
@@ -874,7 +959,7 @@ export default function BookEditor() {
                 <DropZone
                   images={character.referencePhotos}
                   primary={character.primaryReferencePhoto}
-                  disabled={isLocked || !!busy}
+                  disabled={isLocked || operationBusy}
                   onPrimary={(id) =>
                     patchCharacter({ primaryReferencePhoto: id })
                   }
@@ -893,7 +978,7 @@ export default function BookEditor() {
               <div className="actions">
                 <button
                   className="primary"
-                  disabled={isLocked || !!busy || !character.name.trim()}
+                  disabled={isLocked || operationBusy || !character.name.trim()}
                   onClick={() => generate("character")}
                 >
                   {busy === "character"
@@ -904,7 +989,8 @@ export default function BookEditor() {
                 </button>
                 <button
                   disabled={
-                    !!busy || (!character.characterSheetImage && !isLocked)
+                    operationBusy ||
+                    (!character.characterSheetImage && !isLocked)
                   }
                   onClick={() =>
                     patchCharacter({ status: isLocked ? "draft" : "locked" })
@@ -927,7 +1013,7 @@ export default function BookEditor() {
                   regenerate it for a background-only reference.
                 </p>
               )}
-              <fieldset disabled={isLocked || !!busy}>
+              <fieldset disabled={isLocked || operationBusy}>
                 <Field label="What should your story look like?">
                   <textarea
                     rows={5}
@@ -947,7 +1033,7 @@ export default function BookEditor() {
                   Have a look you love? Add a few reference pictures.
                 </p>
                 <DropZone
-                  disabled={isLocked || !!busy}
+                  disabled={isLocked || operationBusy}
                   images={p.visualStyle.referenceImages}
                   onChange={(ids) =>
                     change((p) => ({
@@ -960,7 +1046,7 @@ export default function BookEditor() {
               <div className="actions">
                 <button
                   className="primary"
-                  disabled={isLocked || !!busy}
+                  disabled={isLocked || operationBusy}
                   onClick={() => generate("style")}
                 >
                   {busy === "style"
@@ -971,7 +1057,7 @@ export default function BookEditor() {
                 </button>
                 <button
                   disabled={
-                    !!busy || (!p.visualStyle.previewImage && !isLocked)
+                    operationBusy || (!p.visualStyle.previewImage && !isLocked)
                   }
                   onClick={() =>
                     change((p) => ({
@@ -1138,6 +1224,12 @@ export default function BookEditor() {
           )}
           {step === 4 && (
             <>
+              <BulkRegeneration
+                project={p}
+                jobs={jobs}
+                disabled={!!busy}
+                onQueue={queueJobs}
+              />
               <div className="field-row">
                 <Field label="Chapter">
                   <select
@@ -1200,7 +1292,7 @@ export default function BookEditor() {
                   illustration requests. Keep up to four scene photos per draft.
                 </p>
                 <DropZone
-                  disabled={isLocked || !!busy}
+                  disabled={isLocked || operationBusy || pageQueued}
                   images={chapter.referencePhotos}
                   onChange={(ids) => patchChapter({ referencePhotos: ids })}
                   onUploaded={(ids) =>
@@ -1235,7 +1327,7 @@ export default function BookEditor() {
                   + Page
                 </button>
               </div>
-              <fieldset disabled={isLocked || !!busy}>
+              <fieldset disabled={isLocked || !!busy || pageQueued}>
                 <Field label="What happens on this page?">
                   <textarea
                     rows={3}
@@ -1382,7 +1474,7 @@ export default function BookEditor() {
                   artwork mode.
                 </p>
                 <DropZone
-                  disabled={isLocked || !!busy}
+                  disabled={isLocked || operationBusy || pageQueued}
                   images={page.referencePhotos}
                   onChange={(ids) => patchPage({ referencePhotos: ids })}
                   onUploaded={(ids) =>
@@ -1393,7 +1485,7 @@ export default function BookEditor() {
                   type="button"
                   disabled={
                     isLocked ||
-                    !!busy ||
+                    operationBusy ||
                     !(
                       chapter.referencePhotos.length +
                       page.referencePhotos.length
@@ -1454,25 +1546,25 @@ export default function BookEditor() {
               <div className="actions">
                 <button
                   className="primary"
-                  disabled={isLocked || !!busy}
+                  disabled={isLocked || !!busy || pageQueued}
                   onClick={() => generate("scene")}
                 >
-                  {busy === "scene"
-                    ? "Illustrating…"
+                  {pageQueued
+                    ? "Queued / Illustrating…"
                     : selected
                       ? "Edit & Regenerate"
                       : "Generate"}
                 </button>
                 {selected && (
                   <button
-                    disabled={isLocked || !!busy}
+                    disabled={isLocked || !!busy || pageQueued}
                     onClick={() => generate("scene", true)}
                   >
                     Try Again
                   </button>
                 )}
                 <button
-                  disabled={!!busy || (!selected && !isLocked)}
+                  disabled={!!busy || pageQueued || (!selected && !isLocked)}
                   onClick={() =>
                     patchPage(
                       isLocked
@@ -1499,7 +1591,7 @@ export default function BookEditor() {
                   <ImageTweaker
                     key={selected.id}
                     image={selected.image}
-                    disabled={isLocked || !!busy}
+                    disabled={isLocked || operationBusy || pageQueued}
                     sampleMode={sampleMode}
                     onApply={tweakImage}
                   />
@@ -1510,7 +1602,7 @@ export default function BookEditor() {
                   <span>Versions</span>
                   {page.illustrationVersions.map((v, i) => (
                     <button
-                      disabled={isLocked || !!busy}
+                      disabled={isLocked || !!busy || pageQueued}
                       key={v.id}
                       className={
                         page.selectedIllustrationId === v.id ? "selected" : ""
@@ -1750,7 +1842,7 @@ export default function BookEditor() {
                   )}
                   <button
                     className="primary wide"
-                    disabled={!!busy}
+                    disabled={operationBusy}
                     onClick={download}
                   >
                     {busy === "pdf"
@@ -1962,7 +2054,7 @@ export default function BookEditor() {
             >
               Check illustration settings
             </button>
-            <button className="danger" disabled={!!busy} onClick={reset}>
+            <button className="danger" disabled={operationBusy} onClick={reset}>
               Reset Project
             </button>
           </section>
