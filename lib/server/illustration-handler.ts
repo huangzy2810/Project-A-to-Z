@@ -13,7 +13,35 @@ const id = z.string().min(1).max(100);
 const ids = z.array(id).max(MAX_REFERENCES);
 const status = z.enum(["draft", "locked"]);
 const text = z.string().max(5000);
+const sheet = z.object({
+  image: id,
+  prompt: z.string().max(32000),
+  model: z.string().max(120),
+  signature: z.string().min(1).max(200),
+  status,
+});
+const body = z.object({
+  heightCm: z.number().min(1).max(300).optional(),
+  build: text,
+  proportions: text,
+  referencePhotos: ids,
+  sheet: sheet.optional(),
+});
+const castLineup = z.object({
+  members: z
+    .array(
+      z.object({
+        id,
+        name: z.string().min(1).max(120),
+        heightCm: z.number().min(1).max(300),
+        signature: z.string().min(1).max(200),
+      }),
+    )
+    .max(12),
+  sheet: sheet.optional(),
+});
 const recipeSchema = z.object({
+  castLineup: castLineup.optional(),
   tweak: z
     .object({
       sourceImage: id,
@@ -32,6 +60,7 @@ const recipeSchema = z.object({
   characters: z
     .array(
       z.object({
+        body: body.optional(),
         id,
         name: z.string().min(1).max(120),
         relationship: z.string().max(200),
@@ -56,7 +85,7 @@ const recipeSchema = z.object({
   composition: text,
   requiredElements: text.optional(),
   exclusions: text,
-  kind: z.enum(["character", "style", "scene"]).optional(),
+  kind: z.enum(["character", "body", "lineup", "style", "scene"]).optional(),
 });
 const MAX_BODY = 28 * 1024 * 1024;
 const MAX_FILE = 8 * 1024 * 1024;
@@ -168,7 +197,10 @@ export function createIllustrationHandler(
           "The illustration request contains invalid or oversized story details.",
         );
       const recipe = prepareGenerationRecipe(result.data);
-      if (recipe.kind === "character") {
+      if (
+        ["character", "body", "lineup"].includes(recipe.kind || "") ||
+        recipe.characters.some((c) => c.body)
+      ) {
         const issues = generationApprovalIssues(recipe);
         if (issues.length)
           throw new ImageGenerationError(400, issues.join(" "));

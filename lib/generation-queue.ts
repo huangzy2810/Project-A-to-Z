@@ -1,3 +1,4 @@
+import { lineupApprovalIssues } from "./character-references";
 import {
   uid,
   type BookProject,
@@ -44,6 +45,7 @@ export function sceneRecipe(
 ): GenerationRecipe {
   return {
     kind: "scene",
+    castLineup: project.castLineup,
     characters: project.characters.filter((c) =>
       page.characterIds.includes(c.id),
     ),
@@ -124,6 +126,26 @@ export function jobApprovalIssues(
     issues.push(
       "The approved visual style changed. Queue this page again with current approvals.",
     );
+  if (
+    job.recipe.characters.some((c) => c.body) &&
+    job.recipe.characters.length > 1
+  ) {
+    issues.push(
+      ...lineupApprovalIssues(
+        project.castLineup,
+        project.characters.filter((c) =>
+          job.recipe.characters.some((saved) => saved.id === c.id),
+        ),
+        project.visualStyle,
+      ),
+    );
+    if (
+      project.castLineup?.sheet?.image !== job.recipe.castLineup?.sheet?.image
+    )
+      issues.push(
+        "The approved cast lineup changed. Queue this page again with current approvals.",
+      );
+  }
   return [...issues, ...generationApprovalIssues(job.recipe)];
 }
 export function applyQueuedVersion(

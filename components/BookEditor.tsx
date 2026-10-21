@@ -1,5 +1,12 @@
 "use client";
 import ImageTweaker from "./ImageTweaker";
+import CharacterBodyBuilder from "./CharacterBodyBuilder";
+import {
+  bodySignature,
+  lineupMembers,
+  lineupSignature,
+} from "@/lib/character-references";
+import type { BodyReference, CastLineup } from "@/lib/model";
 import { BulkRegeneration, GenerationQueuePanel } from "./GenerationQueuePanel";
 import {
   GenerationQueue,
@@ -461,6 +468,32 @@ export default function BookEditor() {
           styleReference: v.styleReference,
           faceOnly: true,
           faceViews: "multi-angle",
+          faceHistory: [
+            ...(character.faceHistory || []),
+            ...(character.characterSheetImage &&
+            !character.faceHistory?.some(
+              (old) => old.image === character.characterSheetImage,
+            )
+              ? [
+                  {
+                    image: character.characterSheetImage,
+                    prompt: character.generatedPrompt || "",
+                    model: character.generationModel || "legacy",
+                    styleReference: character.styleReference,
+                    faceOnly: character.faceOnly,
+                    faceViews: character.faceViews,
+                  },
+                ]
+              : []),
+            {
+              image: v.image,
+              prompt: v.prompt,
+              model: v.model,
+              styleReference: v.styleReference,
+              faceOnly: true,
+              faceViews: "multi-angle",
+            },
+          ],
         });
       if (kind === "style")
         change((p) => ({
@@ -482,6 +515,127 @@ export default function BookEditor() {
     } finally {
       setBusy("");
       generationRef.current = false;
+    }
+  }
+  function patchBody(id: string, body: BodyReference) {
+    change((current) => ({
+      ...current,
+      characters: current.characters.map((c) =>
+        c.id !== id ||
+        (c.body?.sheet?.status === "locked" && body.sheet?.status !== "draft")
+          ? c
+          : { ...c, body },
+      ),
+    }));
+  }
+  function patchLineup(lineup: CastLineup) {
+    change((current) =>
+      current.castLineup?.sheet?.status === "locked" &&
+      lineup.sheet?.status !== "draft"
+        ? current
+        : { ...current, castLineup: lineup },
+    );
+  }
+  async function generateReference(kind: "body" | "lineup", ids: string[]) {
+    if (generationRef.current || queueActive) return;
+    const cast = p.characters.filter((c) => ids.includes(c.id));
+    if (kind === "body" && cast[0]?.body?.sheet?.status === "locked") return;
+    if (kind === "lineup" && p.castLineup?.sheet?.status === "locked") return;
+    const input: GenerationInput = {
+      kind,
+      characters: cast,
+      visualStyle: p.visualStyle,
+      scene:
+        kind === "body"
+          ? "Three-view body proportions sheet in plain neutral clothing"
+          : "Cast height lineup on a shared ground baseline",
+      composition: "Head-to-toe neutral reference views, plain background",
+      references: [],
+      exclusions: "logos, jewelry, scenery, lettering",
+    };
+    const issues = generationApprovalIssues(input);
+    if (issues.length) {
+      setError(issues.join(" "));
+      return;
+    }
+    generationRef.current = true;
+    setBusy(kind);
+    setError("");
+    try {
+      const service = await illustrationService(
+        p.generationMode || "auto",
+        setGenerationInfo,
+      );
+      const version = await service.generate(input);
+      if (kind === "body") {
+        const source = cast[0];
+        const sheet = {
+          image: version.image,
+          prompt: version.prompt,
+          model: version.model,
+          signature: bodySignature(source, p.visualStyle),
+          status: "draft" as const,
+        };
+        change((current) => ({
+          ...current,
+          characters: current.characters.map((c) =>
+            c.id !== source.id
+              ? c
+              : {
+                  ...c,
+                  body: {
+                    ...c.body!,
+                    sheet,
+                    history: [
+                      ...(c.body?.history || []),
+                      ...(c.body?.sheet &&
+                      !c.body.history?.some(
+                        (s) => s.image === c.body?.sheet?.image,
+                      )
+                        ? [c.body.sheet]
+                        : []),
+                      sheet,
+                    ],
+                  },
+                },
+          ),
+        }));
+      } else {
+        const members = lineupMembers(cast, p.visualStyle);
+        const sheet = {
+          image: version.image,
+          prompt: version.prompt,
+          model: version.model,
+          signature: lineupSignature(members, p.visualStyle),
+          status: "draft" as const,
+        };
+        change((current) => ({
+          ...current,
+          castLineup: {
+            members,
+            sheet,
+            history: [
+              ...(current.castLineup?.history || []),
+              ...(current.castLineup?.sheet &&
+              !current.castLineup.history?.some(
+                (s) => s.image === current.castLineup?.sheet?.image,
+              )
+                ? [current.castLineup.sheet]
+                : []),
+              sheet,
+            ],
+          },
+        }));
+      }
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? e.message
+          : "Reference generation failed. Previous references are safe.",
+      );
+    } finally {
+      generationRef.current = false;
+      setBusy("");
     }
   }
   async function tweakImage(
@@ -514,6 +668,7 @@ export default function BookEditor() {
       const input: GenerationInput = {
         ...selected.recipe,
         characters,
+        castLineup: p.castLineup,
         tweak: {
           sourceImage: selected.image,
           sourceVersionId: selected.id,
@@ -863,6 +1018,7 @@ export default function BookEditor() {
           )}
           {step === 2 && (
             <>
+              <h3>Face likeness</h3>
               <p className="help">
                 Generate four face-only views—front, three-quarter, profile and
                 smiling—using your locked style and photos. Clothing, bodies,
@@ -957,6 +1113,7 @@ export default function BookEditor() {
                   different angles.
                 </p>
                 <DropZone
+                  label="Face reference photos"
                   images={character.referencePhotos}
                   primary={character.primaryReferencePhoto}
                   disabled={isLocked || operationBusy}
@@ -984,8 +1141,8 @@ export default function BookEditor() {
                   {busy === "character"
                     ? "Drawing…"
                     : character.characterSheetImage
-                      ? "Try Again"
-                      : "Generate Character"}
+                      ? "Regenerate face sheet"
+                      : "Generate face sheet"}
                 </button>
                 <button
                   disabled={
@@ -996,9 +1153,44 @@ export default function BookEditor() {
                     patchCharacter({ status: isLocked ? "draft" : "locked" })
                   }
                 >
-                  {isLocked ? "Unlock Character" : "Lock Character"}
+                  {isLocked ? "Unlock face sheet" : "Approve face sheet"}
                 </button>
               </div>
+              {!!character.faceHistory?.length && (
+                <details>
+                  <summary>Previous face sheets</summary>
+                  <div className="reference-history">
+                    {character.faceHistory.map((old) => (
+                      <button
+                        key={old.image}
+                        disabled={isLocked || operationBusy}
+                        onClick={() =>
+                          patchCharacter({
+                            characterSheetImage: old.image,
+                            generatedPrompt: old.prompt,
+                            generationModel: old.model,
+                            styleReference: old.styleReference,
+                            faceOnly: old.faceOnly,
+                            faceViews: old.faceViews,
+                          })
+                        }
+                      >
+                        <AssetImage id={old.image} alt="Previous face sheet" />
+                        Select face sheet
+                      </button>
+                    ))}
+                  </div>
+                </details>
+              )}
+              <CharacterBodyBuilder
+                project={p}
+                character={character}
+                disabled={operationBusy}
+                onBody={patchBody}
+                onGenerateBody={(id) => generateReference("body", [id])}
+                onLineup={patchLineup}
+                onGenerateLineup={(ids) => generateReference("lineup", ids)}
+              />
             </>
           )}
           {step === 1 && (
