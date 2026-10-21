@@ -1,7 +1,7 @@
 // Server-only provider: imported only by the API route and provider tests.
 import OpenAI from "openai";
 import { EnvHttpProxyAgent, fetch as proxyFetch } from "undici";
-export const IMAGE_MODEL = "gpt-image-1.5";
+export const IMAGE_MODEL = "gpt-image-2.5-flare";
 export interface ImageProvider {
   generate(
     prompt: string,
@@ -37,6 +37,71 @@ const networkCodes = new Set([
   "UND_ERR_BODY_TIMEOUT",
   "UND_ERR_SOCKET",
 ]);
+// Only report fixed API vocabulary. Never echo arbitrary upstream text or values.
+const imageParameters = new Set([
+  "model",
+  "prompt",
+  "image",
+  "mask",
+  "n",
+  "size",
+  "quality",
+  "input_fidelity",
+  "output_format",
+  "output_compression",
+  "background",
+  "response_format",
+]);
+const rejectionReasons = new Set([
+  "unsupported_parameter",
+  "unknown_parameter",
+  "unsupported_value",
+  "invalid_value",
+  "model_not_found",
+  "content_policy_violation",
+  "moderation_blocked",
+  "invalid_image",
+  "invalid_image_format",
+  "invalid_image_size",
+  "invalid_base64",
+  "image_parse_error",
+]);
+function rejectionDetails(error: unknown) {
+  if (!(error instanceof OpenAI.APIError)) return {};
+  const param = error.param;
+  const root = typeof param === "string" ? param.replace(/\[\d+\]$/, "") : "";
+  return {
+    parameter: imageParameters.has(root) ? root : undefined,
+    reason:
+      typeof error.code === "string" && rejectionReasons.has(error.code)
+        ? error.code
+        : undefined,
+  };
+}
+function badRequestMessage(
+  details: ReturnType<typeof rejectionDetails>,
+): string {
+  const { parameter, reason } = details;
+  if (parameter === "model" || reason === "model_not_found")
+    return `OpenAI rejected the configured image model (${IMAGE_MODEL}). Check this API project's model availability and access. Your existing images are safe.`;
+  if (reason === "content_policy_violation" || reason === "moderation_blocked")
+    return "OpenAI declined this image request under its content rules. Review the scene and reference images before trying again. Your existing images are safe.";
+  if (
+    parameter === "image" ||
+    parameter === "mask" ||
+    [
+      "invalid_image",
+      "invalid_image_format",
+      "invalid_image_size",
+      "invalid_base64",
+      "image_parse_error",
+    ].includes(reason || "")
+  )
+    return `OpenAI rejected ${parameter === "mask" ? "the edit mask" : "a reference image"}. Check the image format, size and dimensions before trying again. Your existing images are safe.`;
+  if (parameter)
+    return `OpenAI rejected the image request parameter "${parameter}" for ${IMAGE_MODEL}${reason ? ` (${reason})` : ""}. This is a request-settings error; your scene text and existing images are safe.`;
+  return "OpenAI rejected the image request without a recognized parameter or reason. This can be a model-settings or reference-image problem. Your scene text and existing images are safe.";
+}
 function diagnosticCode(error: unknown): string {
   let cause = error;
   for (let i = 0; i < 5 && cause && typeof cause === "object"; i++) {
@@ -93,7 +158,6 @@ export function createOpenAIProvider(
               {
                 ...options,
                 image: references,
-                input_fidelity: "high",
                 ...(mask ? { mask } : {}),
               },
               { signal },
@@ -123,9 +187,11 @@ export function createOpenAIProvider(
       } catch (error) {
         if (error instanceof ImageGenerationError) throw error;
         const code = diagnosticCode(error);
-        // Log only fixed diagnostic codes/statuses, never upstream messages, keys, headers or photos.
+        const rejection = rejectionDetails(error);
+        // Log only fixed diagnostic vocabulary, never upstream messages, keys, headers or photos.
         console.error("[image-generation]", {
           code,
+          ...rejection,
           status: error instanceof OpenAI.APIError ? error.status : undefined,
         });
         const failure = (status: number, message: string) =>
@@ -162,10 +228,7 @@ export function createOpenAIProvider(
               "Image generation is busy or the API quota has been reached. Wait a moment or check your API billing before trying again.",
             );
           if (error.status === 400)
-            throw failure(
-              422,
-              "The image service could not accept this scene or its references. Try a simpler description and valid reference photos.",
-            );
+            throw failure(422, badRequestMessage(rejection));
         }
         if (signal.aborted || error instanceof OpenAI.APIConnectionTimeoutError)
           throw failure(

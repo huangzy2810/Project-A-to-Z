@@ -168,9 +168,10 @@ test("official SDK sends mask alongside original via multipart editing", async (
     mask,
   );
   assert.ok(form);
+  assert.equal(form.get("model"), "gpt-image-2.5-flare");
   assert.ok(form.get("mask") instanceof File);
   assert.equal((form.get("mask") as File).size, mask.size);
-  assert.equal(form.get("input_fidelity"), "high");
+  assert.equal(form.has("input_fidelity"), false);
   assert.equal(
     Array.from(form.values()).filter((v) => v instanceof File).length,
     2,
