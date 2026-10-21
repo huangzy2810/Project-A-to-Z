@@ -102,7 +102,7 @@ export function assemblePrompt(input: GenerationRecipe): string {
         : "Illustrate this story scene with only the requested characters.",
     ...input.characters.map((c) =>
       c.status === "locked"
-        ? `Preserve character identity: ${c.name}${input.kind === "scene" ? "" : `, ${c.description}`}. Keep facial features, hairstyle, approximate age and facial proportions consistent with their attached references.`
+        ? `Preserve character identity: ${c.name}, ${c.description}. Keep facial features, hairstyle, approximate age and facial proportions consistent with their attached references.`
         : `Character: ${c.name}, ${c.description}.`,
     ),
     ...(input.kind === "scene"

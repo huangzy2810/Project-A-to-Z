@@ -765,3 +765,58 @@ test("HTTP 400 diagnostics distinguish model, settings, image and moderation wit
     console.error = original;
   }
 });
+
+test("chapter API sends selected character descriptions to the image provider alongside canonical face references", async () => {
+  const p = createProject();
+  const selected = p.characters.slice(0, 2).map((c, i) => ({
+    ...c,
+    status: "locked" as const,
+    characterSheetImage: `sheet-${i}`,
+    description:
+      i === 0
+        ? "Petite, 105 cm tall, slender build, curious and energetic."
+        : "Tall, broad shoulders, gentle and patient.",
+  }));
+  const input = {
+    ...recipe(),
+    characters: selected,
+    visualStyle: {
+      ...p.visualStyle,
+      status: "locked" as const,
+      previewImage: "approved-style",
+    },
+  };
+  let calls = 0;
+  const handle = createIllustrationHandler(() => ({
+    async generate(prompt, images) {
+      calls++;
+      for (const c of selected)
+        assert.ok(
+          prompt.includes(
+            `Preserve character identity: ${c.name}, ${c.description}`,
+          ),
+        );
+      assert.match(prompt, /Ava\. Canonical identity = Image 1/);
+      assert.match(prompt, /Mama\. Canonical identity = Image 2/);
+      assert.doesNotMatch(prompt, /Preserve character identity: Papa/);
+      assert.equal(images.length, 3);
+      return { bytes: png, model: IMAGE_MODEL };
+    },
+  }));
+  const files = ["sheet-0", "sheet-1", "approved-style"].map(
+    (id) => new File([png], `${id}.png`, { type: "image/png" }),
+  );
+  assert.equal((await handle(request(input, files))).status, 200);
+  assert.equal(calls, 1);
+  const repair = assemblePrompt({
+    ...input,
+    tweak: {
+      sourceImage: "original",
+      sourceVersionId: "previous",
+      feedback: "Refine likeness",
+      region: { x: 0, y: 0, width: 0.5, height: 0.5 },
+    },
+  });
+  assert.ok(repair.includes(selected[0].description));
+  assert.match(repair, /Canonical identity = Image 2/);
+});
