@@ -212,7 +212,7 @@ export const mockIllustrationService: IllustrationService = {
       );
       c.stroke();
     }
-    if (["character", "body", "lineup"].includes(input.kind || "")) {
+    if (input.kind === "character") {
       c.fillStyle = "#fffaf0";
       c.fillRect(0, 0, 2400, 2400);
     }
@@ -221,43 +221,22 @@ export const mockIllustrationService: IllustrationService = {
         ? 0
         : input.kind === "character"
           ? 4
-          : input.kind === "body"
-            ? 3
-            : Math.max(1, input.characters.length);
+          : Math.max(1, input.characters.length);
     for (let n = 0; n < poses; n++) {
       const x =
-        input.kind === "character"
-          ? 600 + (n % 2) * 1200
-          : input.kind === "body"
-            ? 400 + n * 800
-            : input.kind === "lineup"
-              ? (n + 0.5) * (2200 / poses) + 100
-              : 900 + n * 350;
+        input.kind === "character" ? 600 + (n % 2) * 1200 : 900 + n * 350;
       const y =
         input.kind === "character" ? 975 + Math.floor(n / 2) * 1200 : 1660;
       const adult =
         input.characters[n]?.name !== "Ava" && input.kind !== "character";
-      const person =
-        input.kind === "body" ? input.characters[0] : input.characters[n];
-      const proportional =
-        input.kind === "lineup"
-          ? 3 *
-            ((person?.body?.heightCm || 100) /
-              Math.max(...input.characters.map((c) => c.body?.heightCm || 100)))
-          : input.kind === "body"
-            ? 3
-            : undefined;
-      const size =
-        input.kind === "character" ? 5 : (proportional ?? (adult ? 1.2 : 1));
+      const size = input.kind === "character" ? 5 : adult ? 1.2 : 1;
       c.save();
-      c.translate(x, proportional ? 2050 - 300 * size : y);
+      c.translate(x, y);
       c.scale(size, size);
       if (input.kind === "character" && n === 1) c.scale(0.85, 1);
       if (input.kind === "character" && n === 2) c.scale(0.55, 1);
       if (input.kind !== "character") {
-        c.fillStyle = proportional
-          ? "#999999"
-          : ["#ca846e", "#7d9990", "#c4a36f"][n % 3];
+        c.fillStyle = ["#ca846e", "#7d9990", "#c4a36f"][n % 3];
         c.beginPath();
         c.roundRect(-80, 0, 160, 220, 55);
         c.fill();

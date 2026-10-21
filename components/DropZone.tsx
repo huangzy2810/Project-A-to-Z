@@ -4,7 +4,6 @@ import { normalizeImage, putAsset } from "@/lib/storage";
 import { AssetImage } from "./BookPage";
 export default function DropZone({
   images,
-  label = "Reference photos",
   onChange,
   onUploaded,
   primary,
@@ -12,7 +11,6 @@ export default function DropZone({
   disabled = false,
 }: {
   images: string[];
-  label?: string;
   onChange: (ids: string[]) => void;
   onUploaded?: (ids: string[]) => void | Promise<void>;
   primary?: string;
@@ -61,7 +59,6 @@ export default function DropZone({
       <input
         ref={ref}
         type="file"
-        aria-label={label}
         accept="image/jpeg,image/png,image/webp"
         multiple
         hidden

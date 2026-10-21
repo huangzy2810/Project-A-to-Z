@@ -52,27 +52,25 @@ test("complete local book workflow, reload, locked pages and square PDF", async 
     }),
     "base64",
   );
-  await page
-    .getByLabel("Face reference photos", { exact: true })
-    .setInputFiles({
-      name: "reference.png",
-      mimeType: "image/png",
-      buffer: photo,
-    });
+  await page.locator("input[type=file]").setInputFiles({
+    name: "reference.png",
+    mimeType: "image/png",
+    buffer: photo,
+  });
   await expect(page.getByAltText("Reference photo 1")).toBeVisible();
   for (const name of ["Ava", "Mama", "Papa"]) {
     await page.getByRole("button", { name, exact: true }).click();
     await page
-      .getByRole("button", { name: "Generate face sheet", exact: true })
+      .getByRole("button", { name: "Generate Character", exact: true })
       .click();
     await expect(
-      page.getByRole("button", { name: "Approve face sheet", exact: true }),
+      page.getByRole("button", { name: "Lock Character", exact: true }),
     ).toBeEnabled();
     await page
-      .getByRole("button", { name: "Approve face sheet", exact: true })
+      .getByRole("button", { name: "Lock Character", exact: true })
       .click();
     await expect(
-      page.getByRole("button", { name: "Unlock face sheet", exact: true }),
+      page.getByRole("button", { name: "Unlock Character", exact: true }),
     ).toBeVisible();
   }
   await page.getByRole("button", { name: "Ava ✓", exact: true }).click();

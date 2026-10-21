@@ -12,11 +12,7 @@ test("AI client sends image references, retains retries and history, and never f
   await page.route("**/api/illustrations", async (route) => {
     if (route.request().method() === "GET") {
       await route.fulfill({
-        json: {
-          available: true,
-          provider: "OpenAI",
-          model: "gpt-image-2.5-flare",
-        },
+        json: { available: true, provider: "OpenAI", model: "gpt-image-2.5-flare" },
       });
       return;
     }
@@ -77,11 +73,8 @@ test("AI client sends image references, retains retries and history, and never f
     }),
     "base64",
   );
-  const upload = (face = false) =>
-    (face
-      ? page.getByLabel("Face reference photos", { exact: true })
-      : page.locator("input[type=file]").last()
-    ).setInputFiles({
+  const upload = () =>
+    page.locator("input[type=file]").last().setInputFiles({
       name: "reference.png",
       mimeType: "image/png",
       buffer: photo,
@@ -107,16 +100,16 @@ test("AI client sends image references, retains retries and history, and never f
   expect(imageCounts[0]).toBe(1);
   expect(requests[0].scene).toContain("Background only");
   await page.getByRole("button", { name: /Character$/ }).click();
-  await upload(true);
+  await upload();
   await expect(page.getByAltText("Reference photo 1")).toBeVisible();
   await page
-    .getByRole("button", { name: "Generate face sheet", exact: true })
+    .getByRole("button", { name: "Generate Character", exact: true })
     .click();
   await expect(
-    page.getByRole("button", { name: "Approve face sheet", exact: true }),
+    page.getByRole("button", { name: "Lock Character", exact: true }),
   ).toBeEnabled();
   await page
-    .getByRole("button", { name: "Approve face sheet", exact: true })
+    .getByRole("button", { name: "Lock Character", exact: true })
     .click();
   expect(requests[1].kind).toBe("character");
   expect(imageCounts[1]).toBe(3);
@@ -177,19 +170,17 @@ test("AI client sends image references, retains retries and history, and never f
   );
   await page.getByRole("button", { name: /Character$/ }).click();
   await page
-    .getByRole("button", { name: "Unlock face sheet", exact: true })
+    .getByRole("button", { name: "Unlock Character", exact: true })
     .click();
   await page
     .getByLabel("What makes them, them?")
     .fill("Ava has a short bob and a little red hair ribbon.");
-  await page
-    .getByRole("button", { name: "Regenerate face sheet", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Try Again", exact: true }).click();
   await expect(
-    page.getByRole("button", { name: "Approve face sheet", exact: true }),
+    page.getByRole("button", { name: "Lock Character", exact: true }),
   ).toBeEnabled();
   await page
-    .getByRole("button", { name: "Approve face sheet", exact: true })
+    .getByRole("button", { name: "Lock Character", exact: true })
     .click();
   await page.getByRole("button", { name: /Chapter$/ }).click();
   await page.getByRole("button", { name: "Unlock Page", exact: true }).click();
@@ -221,11 +212,7 @@ test("missing configuration explicitly uses samples, while configuration errors 
 }) => {
   await page.route("**/api/illustrations", (route) =>
     route.fulfill({
-      json: {
-        available: false,
-        provider: "OpenAI",
-        model: "gpt-image-2.5-flare",
-      },
+      json: { available: false, provider: "OpenAI", model: "gpt-image-2.5-flare" },
     }),
   );
   await page.goto("/");

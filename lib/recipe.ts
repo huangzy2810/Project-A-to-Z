@@ -1,58 +1,19 @@
 import type { GenerationRecipe } from "./model";
-import {
-  bodySignature,
-  bodyInputIssues,
-  bodyApprovalIssues,
-  lineupApprovalIssues,
-} from "./character-references";
 export const MAX_REFERENCES = 16;
 export interface ReferenceAsset {
   id: string;
   label: string;
-  role: "identity" | "body" | "lineup" | "style" | "scene-layout" | "original";
+  role: "identity" | "style" | "scene-layout" | "original";
 }
 export function prepareGenerationRecipe(
   input: GenerationRecipe,
 ): GenerationRecipe {
-  // Reference approval needs signatures and IDs, not accumulated history or old prompts.
-  input = {
-    ...input,
-    characters: input.characters.map((c) => ({
-      ...c,
-      generatedPrompt: undefined,
-      faceHistory: undefined,
-      body: c.body
-        ? {
-            ...c.body,
-            history: undefined,
-            sheet: c.body.sheet ? { ...c.body.sheet, prompt: "" } : undefined,
-          }
-        : undefined,
-    })),
-    castLineup: input.castLineup
-      ? {
-          ...input.castLineup,
-          history: undefined,
-          sheet: input.castLineup.sheet
-            ? { ...input.castLineup.sheet, prompt: "" }
-            : undefined,
-        }
-      : undefined,
-    visualStyle: { ...input.visualStyle, generatedStylePrompt: "" },
-  };
-  if (input.kind === "character")
-    return {
-      ...input,
-      characters: input.characters.map((c) => ({ ...c, body: undefined })),
-      castLineup: undefined,
-    };
   if (input.kind === "scene" || !input.kind)
     return { ...input, kind: "scene", references: [] };
   if (input.kind !== "style") return input;
   return {
     ...input,
     characters: [],
-    castLineup: undefined,
     scene:
       "An empty Shanghai waterfront landscape with river, skyline and trees. Background only: no people, characters, faces, silhouettes or animals.",
     requiredElements: "Background scenery only",
@@ -92,35 +53,6 @@ export function referenceAssets(input: GenerationRecipe): ReferenceAsset[] {
         );
     }
   }
-  if (input.kind === "body") {
-    for (const c of input.characters)
-      c.body?.referencePhotos.forEach((id, i) =>
-        add(
-          id,
-          `${c.name}: body proportion photo ${i + 1}; ignore clothing and face`,
-          "body",
-        ),
-      );
-  } else if (input.kind === "scene" || input.kind === "lineup") {
-    for (const c of input.characters)
-      if (c.body?.sheet?.status === "locked")
-        add(
-          c.body.sheet.image,
-          `${c.name}: approved body proportions; not clothing`,
-          "body",
-        );
-    if (
-      input.kind === "scene" &&
-      input.characters.length > 1 &&
-      input.characters.some((c) => c.body) &&
-      input.castLineup?.sheet?.status === "locked"
-    )
-      add(
-        input.castLineup.sheet.image,
-        "Approved cast lineup: relative height only; no extra cast",
-        "lineup",
-      );
-  }
   if (input.kind === "style" || input.visualStyle.status === "locked") {
     if (input.kind !== "style")
       add(
@@ -132,10 +64,7 @@ export function referenceAssets(input: GenerationRecipe): ReferenceAsset[] {
       add(id, `Visual style reference ${i + 1}`, "style"),
     );
   }
-  (input.kind === "body" || input.kind === "lineup"
-    ? []
-    : input.references
-  ).forEach((id, i) =>
+  input.references.forEach((id, i) =>
     add(
       id,
       input.kind === "character"
@@ -170,34 +99,7 @@ export function assemblePrompt(input: GenerationRecipe): string {
       ? "Create a canonical face-only identity sheet in a clean 2 × 2 grid. Show exactly four tightly cropped views of the same person: front, three-quarter, side profile, and front smiling. Keep facial identity, age, hair and skin tone identical across all four views. Show only face, natural hair and ears, cropped tightly below the chin, on a plain neutral background. No neck, shoulders, torso, full body, clothing, collars, hats, jewelry, accessories, props, scenery, additional people or labels. Extract facial identity from uploaded photos and ignore their clothing and surroundings. Facial identity takes precedence over any clothing or non-face details in the description."
       : input.kind === "style"
         ? "Create an uninhabited background-only sample of the requested illustration style. No people, characters, faces, silhouettes or animals, even if they appear in uploaded style references."
-        : input.kind === "body" || input.kind === "lineup"
-          ? "Create a character reference for approval in the approved illustration style."
-          : "Illustrate this story scene with only the requested characters.",
-    ...(input.kind === "body"
-      ? [
-          "Create a full-body proportions sheet with exactly three views of the same character: front, side and three-quarter, standing neutrally from head to toe. Use the approved face sheet exclusively for identity. Body photos guide only frame, shoulders, torso and limb proportions, never identity or outfits. Wear simple plain neutral gray short-sleeved top, trousers and flat shoes in every view, with no patterns, logos, jewelry or other accessories. Fully clothed, no anatomy detail, no scenery, no lettering. Written height/build/proportions take priority over photo perspective. These neutral clothes are calibration garments only, not a story outfit.",
-        ]
-      : []),
-    ...(input.kind === "lineup"
-      ? [
-          "Create a full-body cast height lineup with exactly one of each supplied character, left to right in the listed order. All stand upright on the SAME ground baseline at the SAME camera distance in a front-facing orthographic view. Do not make everyone the same height. Scale their standing heights in the stated ratios; preserve the approved faces and body builds. Use plain neutral gray clothing and flat shoes. No perspective size tricks, no scenery, no text, no rulers, no repeated views and no extra people. The result is also a cast consistency test for approval.",
-        ]
-      : []),
-    ...(input.kind === "body" ||
-    input.kind === "lineup" ||
-    input.kind === "scene"
-      ? input.characters
-          .filter((c) => c.body)
-          .map(
-            (c) =>
-              `Body proportions for ${c.name}: standing height ${c.body?.heightCm} cm; build: ${c.body?.build}; proportions: ${c.body?.proportions || "follow approved body reference"}. Face identity always comes from the face sheet, never from body photos or neutral garments.`,
-          )
-      : []),
-    ...(input.kind === "lineup"
-      ? [
-          `Left-to-right height order: ${input.characters.map((c) => `${c.name}: ${c.body?.heightCm} cm`).join("; ")}.`,
-        ]
-      : []),
+        : "Illustrate this story scene with only the requested characters.",
     ...input.characters.map((c) =>
       c.status === "locked"
         ? `Preserve character identity: ${c.name}${input.kind === "scene" ? "" : `, ${c.description}`}. Keep facial features, hairstyle, approximate age and facial proportions consistent with their attached references.`
@@ -215,29 +117,6 @@ export function assemblePrompt(input: GenerationRecipe): string {
           }),
           "Reference hierarchy: canonical face references govern facial identity only; clothing, outfits and accessories may come from scene photographs, while explicit written scene descriptions and required elements take priority; never copy clothing from character identity images; approved style governs medium, palette and texture only; scene photographs govern backgrounds, objects, camera framing, character placement and clothing only. Never borrow faces or people from style or scene references. Verify every selected character against their assigned sheet before completing the image.",
         ]
-      : []),
-    ...(input.kind === "scene"
-      ? [
-          ...input.characters
-            .filter((c) => c.body?.sheet?.status === "locked")
-            .map(
-              (c) =>
-                `BODY CONTRACT — ${c.name}: Image ${references.findIndex((r) => r.id === c.body?.sheet?.image) + 1 + offset} governs build and body proportions ONLY. Do not copy its neutral clothing, face, pose or layout. Use the written scene for outfits and actions.`,
-            ),
-          ...(input.characters.length > 1 &&
-          input.characters.some((c) => c.body) &&
-          input.castLineup?.sheet?.status === "locked"
-            ? [
-                `HEIGHT CONTRACT — Image ${references.findIndex((r) => r.id === input.castLineup?.sheet?.image) + 1 + offset} governs relative standing heights ONLY. Lineup left-to-right: ${input.castLineup.members.map((m) => `${m.name} (${m.heightCm} cm)`).join("; ")}. Render only selected characters, never extra lineup people. Preserve relative scale at equal depth; account for perspective and seated/standing poses. Faces come exclusively from each numbered canonical face sheet, outfits from scene text, and visual treatment from approved style.`,
-              ]
-            : []),
-        ]
-      : []),
-    ...(input.kind === "body" || input.kind === "lineup"
-      ? input.characters.map(
-          (c) =>
-            `Reference binding for ${c.name}: facial identity = Image ${references.findIndex((r) => r.id === c.characterSheetImage) + 1 + offset}${input.kind === "lineup" ? `; body proportions = Image ${references.findIndex((r) => r.id === c.body?.sheet?.image) + 1 + offset}` : ""}. Never swap identities between characters.`,
-        )
       : []),
     `Visual style: ${input.visualStyle.description}`,
     input.kind !== "style" && input.visualStyle.status === "locked"
@@ -270,8 +149,7 @@ export function assemblePrompt(input: GenerationRecipe): string {
 }
 
 export function generationApprovalIssues(input: GenerationRecipe): string[] {
-  if (!["scene", "character", "body", "lineup"].includes(input.kind || ""))
-    return [];
+  if (input.kind !== "scene" && input.kind !== "character") return [];
   const issues: string[] = [];
   if (input.visualStyle.status !== "locked" || !input.visualStyle.previewImage)
     issues.push(
@@ -285,41 +163,6 @@ export function generationApprovalIssues(input: GenerationRecipe): string[] {
         `Generate and lock ${character.name} in Character Studio before using them on this page.`,
       );
   }
-  if (input.kind === "body") {
-    if (input.characters.length !== 1)
-      issues.push("Choose exactly one character for a body sheet.");
-    issues.push(
-      ...input.characters.flatMap((c) => bodyInputIssues(c, input.visualStyle)),
-    );
-  }
-  if (input.kind === "lineup") {
-    if (input.characters.length < 2)
-      issues.push("Select at least two characters for a height lineup.");
-    issues.push(
-      ...input.characters.flatMap((c) =>
-        bodyApprovalIssues(c, input.visualStyle),
-      ),
-    );
-  }
-  if (input.kind === "scene" && input.characters.some((c) => c.body)) {
-    issues.push(
-      ...input.characters.flatMap((c) =>
-        bodyApprovalIssues(c, input.visualStyle),
-      ),
-    );
-    if (input.characters.length > 1)
-      issues.push(
-        ...lineupApprovalIssues(
-          input.castLineup,
-          input.characters,
-          input.visualStyle,
-        ),
-      );
-  }
-  if (referenceAssets(input).length + (input.tweak ? 1 : 0) > MAX_REFERENCES)
-    issues.push(
-      `Use no more than ${MAX_REFERENCES} image references. Reduce the selected cast or extra style photos.`,
-    );
   return issues;
 }
 
@@ -349,11 +192,7 @@ export function retryIdentityIssues(
       character.characterSheetImage !== previous.characterSheetImage ||
       character.primaryReferencePhoto !== previous.primaryReferencePhoto ||
       character.name !== previous.name ||
-      character.description !== previous.description ||
-      bodySignature(character, recipe.visualStyle) !==
-        bodySignature(previous, recipe.visualStyle) ||
-      character.body?.sheet?.image !== previous.body?.sheet?.image ||
-      character.body?.sheet?.status !== previous.body?.sheet?.status
+      character.description !== previous.description
     )
       return [
         `${character.name}'s approved identity has changed. Use Edit & Regenerate to apply the current Character Studio reference.`,

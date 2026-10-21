@@ -11,36 +11,7 @@ export interface Typography {
   textColor: string;
   defaultTextPosition: Position;
 }
-export interface ReferenceSheet {
-  image: string;
-  prompt: string;
-  model: string;
-  signature: string;
-  status: Status;
-}
-export interface BodyReference {
-  heightCm?: number;
-  build: string;
-  proportions: string;
-  referencePhotos: string[];
-  sheet?: ReferenceSheet;
-  history?: ReferenceSheet[];
-}
-export interface CastLineup {
-  members: { id: string; name: string; heightCm: number; signature: string }[];
-  sheet?: ReferenceSheet;
-  history?: ReferenceSheet[];
-}
 export interface Character {
-  body?: BodyReference;
-  faceHistory?: {
-    image: string;
-    prompt: string;
-    model: string;
-    styleReference?: string;
-    faceOnly?: boolean;
-    faceViews?: "multi-angle";
-  }[];
   faceOnly?: boolean;
   faceViews?: "multi-angle";
   styleReference?: string;
@@ -71,7 +42,6 @@ export interface ImageTweak {
   region: ImageRegion;
 }
 export interface GenerationRecipe {
-  castLineup?: CastLineup;
   tweak?: ImageTweak;
   characters: Character[];
   visualStyle: VisualStyle;
@@ -80,14 +50,13 @@ export interface GenerationRecipe {
   composition: string;
   requiredElements?: string;
   exclusions: string;
-  kind?: "character" | "body" | "lineup" | "style" | "scene";
+  kind?: "character" | "style" | "scene";
 }
 export interface IllustrationVersion {
   referenceManifest?: {
     id: string;
     label: string;
-    role?:
-      "identity" | "body" | "lineup" | "style" | "scene-layout" | "original";
+    role?: "identity" | "style" | "scene-layout" | "original";
   }[];
   width?: number;
   height?: number;
@@ -128,7 +97,6 @@ export interface Chapter {
   pages: StoryPage[];
 }
 export interface BookProject {
-  castLineup?: CastLineup;
   generationMode?: "auto" | "mock";
   schemaVersion: 1;
   id: string;
@@ -275,30 +243,6 @@ export function updatePage(
     })),
   };
 }
-function validSheet(sheet: ReferenceSheet | undefined): boolean {
-  return (
-    sheet === undefined ||
-    (!!sheet &&
-      typeof sheet.image === "string" &&
-      typeof sheet.signature === "string" &&
-      typeof sheet.prompt === "string" &&
-      typeof sheet.model === "string" &&
-      ["draft", "locked"].includes(sheet.status))
-  );
-}
-function validBody(body: BodyReference | undefined): boolean {
-  return (
-    body === undefined ||
-    (!!body &&
-      typeof body.build === "string" &&
-      typeof body.proportions === "string" &&
-      Array.isArray(body.referencePhotos) &&
-      (body.heightCm === undefined || Number.isFinite(body.heightCm)) &&
-      validSheet(body.sheet) &&
-      (body.history === undefined ||
-        (Array.isArray(body.history) && body.history.every(validSheet))))
-  );
-}
 export function assertProject(value: unknown): asserts value is BookProject {
   const p = value as BookProject;
   if (
@@ -311,21 +255,6 @@ export function assertProject(value: unknown): asserts value is BookProject {
     !p.visualStyle ||
     !p.closingMessage ||
     !p.exportSettings ||
-    (p.castLineup !== undefined &&
-      (!p.castLineup ||
-        !Array.isArray(p.castLineup.members) ||
-        p.castLineup.members.some(
-          (m) =>
-            !m ||
-            typeof m.id !== "string" ||
-            typeof m.name !== "string" ||
-            !Number.isFinite(m.heightCm) ||
-            typeof m.signature !== "string",
-        ) ||
-        !validSheet(p.castLineup.sheet) ||
-        (p.castLineup.history !== undefined &&
-          (!Array.isArray(p.castLineup.history) ||
-            !p.castLineup.history.every(validSheet))))) ||
     !Array.isArray(p.characters) ||
     !Array.isArray(p.chapters) ||
     !Array.isArray(p.photoMemories) ||
@@ -338,16 +267,6 @@ export function assertProject(value: unknown): asserts value is BookProject {
         !c ||
         typeof c.name !== "string" ||
         typeof c.description !== "string" ||
-        !validBody(c.body) ||
-        (c.faceHistory !== undefined &&
-          (!Array.isArray(c.faceHistory) ||
-            c.faceHistory.some(
-              (f) =>
-                !f ||
-                typeof f.image !== "string" ||
-                typeof f.prompt !== "string" ||
-                typeof f.model !== "string",
-            ))) ||
         !Array.isArray(c.referencePhotos) ||
         !["draft", "locked"].includes(c.status),
     ) ||
