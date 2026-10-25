@@ -139,7 +139,10 @@ export function BookPage({
             alt="Generated book cover"
             className="generated-cover-image"
           />
-          <div className="generated-cover-copy">
+          <div
+            className="generated-cover-copy"
+            style={{ textAlign: t.alignment }}
+          >
             <h2
               style={{
                 fontFamily: t.headingFont,
@@ -148,7 +151,12 @@ export function BookPage({
             >
               {page.title}
             </h2>
-            <p style={{ fontSize: `${(t.bodySize * 0.85) / 6}cqw` }}>
+            <p
+              style={{
+                fontSize: `${(t.bodySize * 0.85) / 6}cqw`,
+                lineHeight: t.lineHeight,
+              }}
+            >
               {page.text}
             </p>
           </div>

@@ -8,7 +8,14 @@ export interface ReferenceAsset {
 export function prepareGenerationRecipe(
   input: GenerationRecipe,
 ): GenerationRecipe {
-  if (input.kind === "cover") return { ...input, characters: [] };
+  if (input.kind === "cover")
+    return {
+      ...input,
+      characters: input.characters.filter(
+        (character) =>
+          character.status === "locked" && character.characterSheetImage,
+      ),
+    };
   if (input.kind === "scene" || !input.kind)
     return { ...input, kind: "scene", references: [] };
   if (input.kind !== "style") return input;
@@ -73,7 +80,7 @@ export function referenceAssets(input: GenerationRecipe): ReferenceAsset[] {
         : input.kind === "style"
           ? `Visual style reference ${i + 1}`
           : input.kind === "cover"
-            ? `Cover photo reference ${i + 1}: subjects, likeness and setting`
+            ? `Cover photo reference ${i + 1}: clothing, poses and setting; approved characters govern identity`
             : `Scene reference ${i + 1} (background, placement and clothing only)`,
       input.kind === "character"
         ? "identity"
@@ -107,14 +114,15 @@ export function assemblePrompt(input: GenerationRecipe): string {
       : input.kind === "style"
         ? "Create an uninhabited background-only sample of the requested illustration style. No people, characters, faces, silhouettes or animals, even if they appear in uploaded style references."
         : input.kind === "cover"
-          ? "Create an inviting cover guided by the supplied photos and freeform instructions. Cover photos may guide people, recognizable likeness, clothing, poses, composition and setting. Preserve key photo details unless the instructions request changes. Style references govern visual treatment only; do not copy people from style references. Leave quiet space in the lower third for the book title and subtitle."
+          ? "Create an inviting cover guided by the supplied photos and freeform instructions. Cover photos guide clothing, poses, composition and setting. When approved character sheets are attached, they exclusively govern the named characters’ facial identity, hair, age and skin tone; cover photos must not replace or alter these identities. If no approved characters are available, cover photos may guide subjects and likeness. Preserve key photo details unless the instructions request changes. Style references govern visual treatment only; do not copy people from style references. Leave quiet space in the lower third for the book title and subtitle."
           : "Illustrate this story scene with only the requested characters.",
     ...input.characters.map((c) =>
       c.status === "locked"
         ? `Preserve character identity: ${c.name}, ${c.description}. Keep facial features, hairstyle, approximate age and facial proportions consistent with their attached references.`
         : `Character: ${c.name}, ${c.description}.`,
     ),
-    ...(input.kind === "scene"
+    ...(input.kind === "scene" ||
+    (input.kind === "cover" && input.characters.length > 0)
       ? [
           "CHARACTER IDENTITY CONTRACT: The approved character sheets are the source of truth for identity. Draw each selected person once unless the scene explicitly requires otherwise. Keep each face, hair, skin tone, approximate age and distinctive facial features unchanged. Never exchange identities between characters or invent substitute faces. The multiple views on a reference sheet depict one person; never reproduce the sheet’s grid or extra views in a story illustration.",
           ...input.characters.map((c, index) => {
@@ -149,7 +157,7 @@ export function assemblePrompt(input: GenerationRecipe): string {
         : [],
     ),
     input.kind === "cover"
-      ? "Use cover photos for the requested cover subjects and likeness, and approved style images only for visual treatment. Keep photographic subjects in the chosen illustration style. Follow written cover instructions; never render story text, captions or lettering."
+      ? "Use approved character sheets as the source of truth for the requested cast’s identity. Cover photos guide clothing, poses and setting, and may guide likeness only when no approved character sheets are supplied. Use approved style images only for visual treatment. Keep photographic subjects in the chosen illustration style. Follow written cover instructions; never render story text, captions or lettering."
       : references.length
         ? "Use approved identity images exclusively for facial identity, hair, skin tone and age, and style images only for visual treatment. Use scene images for backgrounds, spatial placement and clothing, never photographed people’s likeness or physical features. Transfer garments and accessories onto the approved cast without copying the wearer’s identity. Render only selected approved characters. Explicit written outfits and actions take priority."
         : "No image references supplied; follow the descriptions.",

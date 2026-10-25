@@ -1884,7 +1884,24 @@ export default function BookEditor() {
               <p className="section-description">
                 Create a new front cover using photos, freeform instructions, or
                 both. The cover remains the first printed page. Book Setup
-                controls the title and subtitle shown over the artwork.
+                controls the title and subtitle shown over the artwork. Approved
+                Character Studio sheets guide likeness, Visual Style guides the
+                artwork, and Typography & Layout controls the cover text.
+              </p>
+              <p className="help">
+                Character references:{" "}
+                {p.characters
+                  .filter((c) => c.status === "locked" && c.characterSheetImage)
+                  .map((c) => c.name)
+                  .join(", ") ||
+                  "None approved — generate and lock character sheets in Character Studio to reuse their likeness."}{" "}
+                Visual style:{" "}
+                {p.visualStyle.status === "locked" && p.visualStyle.previewImage
+                  ? "approved sample and style description"
+                  : "current style description; lock a style sample to attach it"}
+                . Typography: {p.typography.headingFont} headings,{" "}
+                {p.typography.bodyFont} body text, {p.typography.alignment}{" "}
+                aligned.
               </p>
               <fieldset disabled={operationBusy}>
                 <Field
@@ -1902,10 +1919,11 @@ export default function BookEditor() {
                   />
                 </Field>
                 <p className="help">
-                  Optional cover photos guide subjects, likeness and
-                  composition. These photos are sent directly for cover
-                  generation; chapter scene photos remain excluded from chapter
-                  illustration requests.
+                  Optional cover photos guide clothing, poses, setting and
+                  composition. Approved character sheets take priority for
+                  likeness. These photos are sent directly for cover generation;
+                  chapter scene photos remain excluded from chapter illustration
+                  requests.
                 </p>
                 <DropZone
                   label="Cover reference photos"
