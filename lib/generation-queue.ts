@@ -275,6 +275,26 @@ export class GenerationQueue {
     this.publish();
     void this.pump();
   }
+  reconcilePages(project: BookProject) {
+    const labels = new Map<string, string>();
+    project.chapters.forEach((chapter, index) =>
+      chapter.pages.forEach((page) =>
+        labels.set(page.id, `Chapter ${index + 1} · Page ${page.pageNumber}`),
+      ),
+    );
+    if (
+      this.jobs.some(
+        (job) => job.status === "running" && !labels.has(job.pageId),
+      )
+    )
+      throw new Error(
+        "Wait for this page's illustration to finish before deleting it.",
+      );
+    this.jobs = this.jobs.filter((job) => labels.has(job.pageId));
+    // Keep the running job object so its completion still updates the queue.
+    for (const job of this.jobs) job.label = labels.get(job.pageId)!;
+    this.publish();
+  }
   dispose() {
     this.disposed = true;
   }

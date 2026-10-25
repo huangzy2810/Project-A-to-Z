@@ -1,5 +1,11 @@
 "use client";
 import ImageTweaker from "./ImageTweaker";
+import {
+  deleteBookPage,
+  deleteBookChapter,
+  restoreDeletedContent,
+  type DeletedContent,
+} from "@/lib/book-structure";
 import { BulkRegeneration, GenerationQueuePanel } from "./GenerationQueuePanel";
 import {
   GenerationQueue,
@@ -88,6 +94,9 @@ export default function BookEditor() {
   const [previewIndex, setPreviewIndex] = useState(0);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
+  const [deletedContent, setDeletedContent] = useState<DeletedContent | null>(
+    null,
+  );
   const [saveState, setSaveState] = useState("Saved on this device");
   const [storageBlocked, setStorageBlocked] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
@@ -281,6 +290,7 @@ export default function BookEditor() {
       localStorage.removeItem(PROJECT_KEY);
       if (project) localStorage.removeItem(queueStorageKey(project.id));
       setProject(createProject());
+      setDeletedContent(null);
       setStorageBlocked(false);
       setStep(0);
       setCharacterIndex(0);
@@ -346,6 +356,91 @@ export default function BookEditor() {
   }
   function patchPage(patch: Partial<StoryPage>) {
     change((p) => updatePage(p, page.id, patch));
+  }
+  function deleteContent(kind: "page" | "chapter") {
+    const ids = kind === "page" ? [page.id] : chapter.pages.map((p) => p.id);
+    const label =
+      kind === "page"
+        ? `Page ${page.pageNumber}`
+        : `chapter “${chapter.title}” and all ${chapter.pages.length} pages`;
+    if (
+      busy ||
+      jobs.some((job) => job.status === "running" && ids.includes(job.pageId))
+    )
+      return;
+    if (
+      !confirm(
+        `Delete ${label}? This removes its text and all saved illustration versions from the book${(kind === "chapter" && chapter.pages.some((p) => p.status === "locked")) || (kind === "page" && page.status === "locked") ? ", including locked content" : ""}. Waiting generation jobs for these pages will be removed. You can undo this deletion until your next deletion or reload.`,
+      )
+    )
+      return;
+    try {
+      const current = latestProject.current!;
+      const result =
+        kind === "page"
+          ? deleteBookPage(current, page.id)
+          : deleteBookChapter(current, chapter.id);
+      if (!queueRef.current)
+        throw new Error(
+          "The generation queue is unavailable. Reload before deleting pages.",
+        );
+      queueRef.current.reconcilePages(result.project);
+      change(() => result.project);
+      setDeletedContent(result.deleted);
+      setChapterIndex(
+        kind === "chapter"
+          ? Math.min(chapterIndex, result.project.chapters.length - 1)
+          : result.project.chapters.findIndex((c) => c.id === chapter.id),
+      );
+      setPageIndex(
+        kind === "chapter"
+          ? 0
+          : Math.min(
+              pageIndex,
+              result.project.chapters.find((c) => c.id === chapter.id)!.pages
+                .length - 1,
+            ),
+      );
+      setPreviewIndex(0);
+      setError("");
+    } catch (e) {
+      setError(
+        e instanceof Error ? e.message : "Could not delete this content.",
+      );
+    }
+  }
+  function undoDeletion() {
+    if (!deletedContent || busy) return;
+    try {
+      const next = restoreDeletedContent(
+        latestProject.current!,
+        deletedContent,
+      );
+      queueRef.current?.reconcilePages(next);
+      change(() => next);
+      const chapterId =
+        deletedContent.kind === "chapter"
+          ? deletedContent.chapter.id
+          : deletedContent.chapterId;
+      const restoredChapterIndex = next.chapters.findIndex(
+        (c) => c.id === chapterId,
+      );
+      setChapterIndex(restoredChapterIndex);
+      setPageIndex(
+        deletedContent.kind === "chapter"
+          ? 0
+          : next.chapters[restoredChapterIndex].pages.findIndex(
+              (p) => p.id === deletedContent.page.id,
+            ),
+      );
+      setPreviewIndex(0);
+      setDeletedContent(null);
+      setError("");
+    } catch (e) {
+      setError(
+        e instanceof Error ? e.message : "Could not restore deleted content.",
+      );
+    }
   }
   async function draftScene(photoIds: string[]) {
     if (generationRef.current || queueActive || page.status === "locked")
@@ -1233,6 +1328,7 @@ export default function BookEditor() {
               <div className="field-row">
                 <Field label="Chapter">
                   <select
+                    aria-label="Chapter"
                     value={chapterIndex}
                     disabled={!!busy}
                     onChange={(e) => {
@@ -1270,6 +1366,21 @@ export default function BookEditor() {
                   }}
                 >
                   + Chapter
+                </button>
+                <button
+                  className="danger"
+                  disabled={
+                    !!busy ||
+                    p.chapters.length <= 1 ||
+                    jobs.some(
+                      (job) =>
+                        job.status === "running" &&
+                        chapter.pages.some((p) => p.id === job.pageId),
+                    )
+                  }
+                  onClick={() => deleteContent("chapter")}
+                >
+                  Delete chapter
                 </button>
               </div>
               <details className="chapter-details">
@@ -1326,7 +1437,39 @@ export default function BookEditor() {
                 >
                   + Page
                 </button>
+                <button
+                  className="danger"
+                  disabled={
+                    !!busy ||
+                    chapter.pages.length <= 1 ||
+                    jobs.some(
+                      (job) =>
+                        job.status === "running" && job.pageId === page.id,
+                    )
+                  }
+                  onClick={() => deleteContent("page")}
+                >
+                  Delete page
+                </button>
               </div>
+              <p className="help">
+                Keep at least one chapter and one page per chapter. Wait for a
+                page’s active illustration to finish before deleting it or its
+                chapter. Locked content can be deleted after confirmation.
+              </p>
+              {deletedContent && (
+                <div className="reference-summary" role="status">
+                  Deleted {deletedContent.kind === "page" ? "page" : "chapter"}.{" "}
+                  <button disabled={!!busy} onClick={undoDeletion}>
+                    Undo deletion
+                  </button>
+                  <small>
+                    {" "}
+                    Available until your next deletion or reload. Removed
+                    generation jobs are not restarted.
+                  </small>
+                </div>
+              )}
               <fieldset disabled={isLocked || !!busy || pageQueued}>
                 <Field label="What happens on this page?">
                   <textarea

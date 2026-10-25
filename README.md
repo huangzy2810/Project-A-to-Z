@@ -69,6 +69,14 @@ The queue panel remains visible across sections and shows waiting, generating, r
 
 Keep the app open in one browser tab while processing. This is a browser-managed queue, not a server worker that continues after closing the app. Queue metadata is stored separately for each v3 book at `ava-book-generation-queue-v3:<book-id>`. Reload pauses waiting jobs until **Resume waiting jobs** is clicked. A request interrupted by closing/reloading is marked separately and is never automatically replayed because it may already have used API credits; inspect saved results before choosing **Retry**. Completed images remain saved with the book. Browser storage failures halt dispatch before more requests start. Reset clears the current book’s queue as well as its v3 data.
 
+## Delete pages and chapters
+
+Chapter Builder includes **Delete page** beside the page tabs and **Delete chapter** beside the chapter selector. Both ask for confirmation and remove the selected content, including its illustration history, from the book and future preview/PDF exports. Locked content can be deleted after explicit confirmation. The editor keeps at least one chapter and at least one page in each chapter; add a blank replacement first if deleting the last existing item. Remaining pages are renumbered automatically, while their stable IDs, text, images and locks are retained.
+
+A page with a currently running illustration cannot be deleted, and neither can its chapter. Deleting waiting pages removes their queued/paused/failed jobs and queue history so they cannot later generate or be retried accidentally. Other active jobs continue and retain their correct destination pages. Surviving queue labels are updated when page/chapter numbers change.
+
+**Undo deletion** restores the most recent deleted page/chapter in its original position, including its images, history and locks, while preserving newer edits to surviving content. Undo is available until another deletion, reload or project reset; it does not restart removed generation jobs. Deletions autosave. Asset blobs stay in browser storage until project reset, preserving shared references and enabling undo; deleting content does not immediately reclaim image storage.
+
 ## Feedback and partial image repairs
 
 In Chapter Builder, choose an illustration version and unlock the page if necessary. Open **Give feedback & tweak part of the image**. Drag a rectangle over the area to change, or use **Select center area** and the Left/Top/Width/Height percentage fields. Enter feedback such as “Match Ava’s eyes and hair to her approved face sheet; keep the expression,” then click **Apply feedback to selected area**.
