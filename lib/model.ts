@@ -97,6 +97,7 @@ export interface Chapter {
   pages: StoryPage[];
 }
 export interface CoverDesign {
+  characterIds?: string[];
   instructions: string;
   referencePhotos: string[];
   illustrationVersions: IllustrationVersion[];
@@ -260,6 +261,9 @@ export function assertProject(value: unknown): asserts value is BookProject {
     (p.cover !== undefined &&
       (!p.cover ||
         typeof p.cover.instructions !== "string" ||
+        (p.cover.characterIds !== undefined &&
+          (!Array.isArray(p.cover.characterIds) ||
+            p.cover.characterIds.some((id) => typeof id !== "string"))) ||
         !Array.isArray(p.cover.referencePhotos) ||
         !Array.isArray(p.cover.illustrationVersions) ||
         (p.cover.selectedIllustrationId !== undefined &&

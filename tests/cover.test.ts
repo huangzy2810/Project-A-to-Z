@@ -7,6 +7,7 @@ import {
   assemblePrompt,
   referenceAssets,
   prepareGenerationRecipe,
+  generationApprovalIssues,
 } from "../lib/recipe";
 import { createIllustrationHandler } from "../lib/server/illustration-handler";
 const png = Buffer.from(
@@ -43,7 +44,7 @@ test("cover references permit photographic subjects and likeness without applyin
   );
   const prompt = assemblePrompt(input);
   assert.match(prompt, /front-cover illustration/);
-  assert.match(prompt, /cover photos may guide subjects and likeness/i);
+  assert.match(prompt, /When the selected cast is empty/);
   assert.match(prompt, /Artwork only: no title/);
   assert.doesNotMatch(
     prompt,
@@ -55,7 +56,7 @@ test("cover references permit photographic subjects and likeness without applyin
   );
   assert.deepEqual(
     prepareGenerationRecipe({ ...input, characters: p.characters }).characters,
-    [],
+    p.characters,
   );
 });
 test("selected generated cover remains the first printed page and original cover can be restored without removing history", () => {
@@ -134,6 +135,7 @@ test("cover provider receives approved cast before style and cover photos, with 
   p.cover = {
     ...emptyCover(),
     instructions: "Ava by the river",
+    characterIds: [p.characters[0].id],
     referencePhotos: ["cover-photo"],
   };
   const recipe = coverRecipe(p);
@@ -181,4 +183,46 @@ test("cover provider receives approved cast before style and cover photos, with 
     }),
   );
   assert.equal(response.status, 200);
+});
+
+test("cover cast selection excludes unselected characters and requires approval instead of silently dropping draft identities", () => {
+  const p = createProject();
+  p.cover = {
+    ...emptyCover(),
+    instructions: "A family adventure",
+    characterIds: [p.characters[1].id],
+  };
+  let recipe = coverRecipe(p);
+  assert.deepEqual(
+    recipe.characters.map((c) => c.name),
+    ["Mama"],
+  );
+  assert.match(
+    generationApprovalIssues(recipe).join(" "),
+    /Generate and lock Mama/,
+  );
+  p.characters[1] = {
+    ...p.characters[1],
+    status: "locked",
+    characterSheetImage: "mama-sheet",
+  };
+  recipe = coverRecipe(p);
+  assert.deepEqual(generationApprovalIssues(recipe), []);
+  assert.deepEqual(
+    referenceAssets(recipe)
+      .filter((r) => r.role === "identity")
+      .map((r) => r.id),
+    ["mama-sheet"],
+  );
+  assert.doesNotMatch(
+    assemblePrompt(recipe),
+    /Preserve character identity: Ava/,
+  );
+  p.cover.characterIds = [];
+  assert.deepEqual(coverRecipe(p).characters, []);
+  assert.match(assemblePrompt(coverRecipe(p)), /create a cover without people/);
+  delete p.cover.characterIds;
+  assert.deepEqual(coverRecipe(p).characters, []);
+  p.cover.characterIds = ["deleted-character"];
+  assert.throws(() => coverRecipe(p), /selected character is missing/);
 });

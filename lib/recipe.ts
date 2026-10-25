@@ -8,14 +8,6 @@ export interface ReferenceAsset {
 export function prepareGenerationRecipe(
   input: GenerationRecipe,
 ): GenerationRecipe {
-  if (input.kind === "cover")
-    return {
-      ...input,
-      characters: input.characters.filter(
-        (character) =>
-          character.status === "locked" && character.characterSheetImage,
-      ),
-    };
   if (input.kind === "scene" || !input.kind)
     return { ...input, kind: "scene", references: [] };
   if (input.kind !== "style") return input;
@@ -114,7 +106,7 @@ export function assemblePrompt(input: GenerationRecipe): string {
       : input.kind === "style"
         ? "Create an uninhabited background-only sample of the requested illustration style. No people, characters, faces, silhouettes or animals, even if they appear in uploaded style references."
         : input.kind === "cover"
-          ? "Create an inviting cover guided by the supplied photos and freeform instructions. Cover photos guide clothing, poses, composition and setting. When approved character sheets are attached, they exclusively govern the named characters’ facial identity, hair, age and skin tone; cover photos must not replace or alter these identities. If no approved characters are available, cover photos may guide subjects and likeness. Preserve key photo details unless the instructions request changes. Style references govern visual treatment only; do not copy people from style references. Leave quiet space in the lower third for the book title and subtitle."
+          ? "Create an inviting cover guided by the supplied photos and freeform instructions. Render only the selected cast listed below; do not add unselected characters or extra people from cover photos. If the cast is empty, create a cover without people. Cover photos guide clothing, poses, composition and setting. When approved character sheets are attached, they exclusively govern the named characters’ facial identity, hair, age and skin tone; cover photos must not replace or alter these identities. When the selected cast is empty, use cover photos for the environment and composition only; omit all people. Preserve key photo details unless the instructions request changes. Style references govern visual treatment only; do not copy people from style references. Leave quiet space in the lower third for the book title and subtitle."
           : "Illustrate this story scene with only the requested characters.",
     ...input.characters.map((c) =>
       c.status === "locked"
@@ -157,7 +149,7 @@ export function assemblePrompt(input: GenerationRecipe): string {
         : [],
     ),
     input.kind === "cover"
-      ? "Use approved character sheets as the source of truth for the requested cast’s identity. Cover photos guide clothing, poses and setting, and may guide likeness only when no approved character sheets are supplied. Use approved style images only for visual treatment. Keep photographic subjects in the chosen illustration style. Follow written cover instructions; never render story text, captions or lettering."
+      ? "Use approved character sheets as the source of truth for the requested cast’s identity. Cover photos guide clothing, poses and setting, and must never introduce unselected people or substitute identities. Use approved style images only for visual treatment. Keep photographic subjects in the chosen illustration style. Follow written cover instructions; never render story text, captions or lettering."
       : references.length
         ? "Use approved identity images exclusively for facial identity, hair, skin tone and age, and style images only for visual treatment. Use scene images for backgrounds, spatial placement and clothing, never photographed people’s likeness or physical features. Transfer garments and accessories onto the approved cast without copying the wearer’s identity. Render only selected approved characters. Explicit written outfits and actions take priority."
         : "No image references supplied; follow the descriptions.",
@@ -168,15 +160,25 @@ export function assemblePrompt(input: GenerationRecipe): string {
 }
 
 export function generationApprovalIssues(input: GenerationRecipe): string[] {
-  if (input.kind !== "scene" && input.kind !== "character") return [];
+  if (
+    input.kind !== "scene" &&
+    input.kind !== "character" &&
+    input.kind !== "cover"
+  )
+    return [];
   const issues: string[] = [];
-  if (input.visualStyle.status !== "locked" || !input.visualStyle.previewImage)
+  if (
+    input.kind !== "cover" &&
+    (input.visualStyle.status !== "locked" || !input.visualStyle.previewImage)
+  )
     issues.push(
       input.kind === "character"
         ? "Generate and lock a visual style before generating a character sheet."
         : "Generate and lock a visual style before illustrating a story page.",
     );
-  for (const character of input.kind === "scene" ? input.characters : []) {
+  for (const character of input.kind === "scene" || input.kind === "cover"
+    ? input.characters
+    : []) {
     if (character.status !== "locked" || !character.characterSheetImage)
       issues.push(
         `Generate and lock ${character.name} in Character Studio before using them on this page.`,

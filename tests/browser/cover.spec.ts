@@ -63,6 +63,24 @@ test("cover step follows closing letter, accepts photos/text, preserves versions
   await expect(
     page.getByRole("button", { name: "Re-create cover", exact: true }),
   ).toBeDisabled();
+  const cast = page.getByRole("group", { name: "Who appears in this scene?" });
+  await expect(cast.getByRole("checkbox")).toHaveCount(3);
+  await page.getByLabel("Cover instructions").fill("Ava in Shanghai");
+  await cast.getByRole("checkbox", { name: "Ava", exact: true }).check();
+  await page
+    .getByRole("button", { name: "Re-create cover", exact: true })
+    .click();
+  await expect(
+    page.getByText(/Generate and lock Ava in Character Studio/),
+  ).toBeVisible();
+  expect(recipes).toHaveLength(0);
+  await page.reload();
+  await page.getByRole("button", { name: /Re-create Cover$/ }).click();
+  await expect(
+    cast.getByRole("checkbox", { name: "Ava", exact: true }),
+  ).toBeChecked();
+  await cast.getByRole("checkbox", { name: "Ava", exact: true }).uncheck();
+  await page.getByLabel("Cover instructions").fill("");
   await page
     .getByLabel("Cover reference photos", { exact: true })
     .setInputFiles({ name: "family.png", mimeType: "image/png", buffer: png });
@@ -74,6 +92,7 @@ test("cover step follows closing letter, accepts photos/text, preserves versions
     page.getByLabel("Cover versions").getByRole("button"),
   ).toHaveCount(1);
   expect(recipes[0].kind).toBe("cover");
+  expect(recipes[0].characters).toEqual([]);
   expect(recipes[0].references).toHaveLength(1);
   expect(counts[0]).toBe(1);
   await expect(

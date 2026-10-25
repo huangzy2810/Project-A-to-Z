@@ -1,4 +1,5 @@
 "use client";
+import { CharacterChoices } from "@/components/CharacterChoices";
 import ImageTweaker from "./ImageTweaker";
 import { coverRecipe, emptyCover, selectedCoverVersion } from "@/lib/cover";
 import type { CoverDesign } from "@/lib/model";
@@ -661,6 +662,8 @@ export default function BookEditor() {
     setError("");
     try {
       const input = coverRecipe(p);
+      const issues = generationApprovalIssues(input);
+      if (issues.length) throw new Error(issues.join(" "));
       const service = await illustrationService(
         p.generationMode || "auto",
         setGenerationInfo,
@@ -1575,26 +1578,11 @@ export default function BookEditor() {
                     onChange={(e) => patchPage({ storyText: e.target.value })}
                   />
                 </Field>
-                <span className="field-label">Who appears in this scene?</span>
-                <div className="character-choices">
-                  {p.characters.map((c) => (
-                    <label key={c.id}>
-                      <input
-                        type="checkbox"
-                        checked={page.characterIds.includes(c.id)}
-                        onChange={(e) =>
-                          patchPage({
-                            characterIds: e.target.checked
-                              ? [...page.characterIds, c.id]
-                              : page.characterIds.filter((id) => id !== c.id),
-                          })
-                        }
-                      />
-                      {c.name}
-                      {c.status === "locked" ? " ✓" : ""}
-                    </label>
-                  ))}
-                </div>
+                <CharacterChoices
+                  characters={p.characters}
+                  selectedIds={page.characterIds}
+                  onChange={(characterIds) => patchPage({ characterIds })}
+                />
                 {selected &&
                   retryIdentityIssues(selected.recipe, p.characters).length >
                     0 && (
@@ -1891,10 +1879,10 @@ export default function BookEditor() {
               <p className="help">
                 Character references:{" "}
                 {p.characters
-                  .filter((c) => c.status === "locked" && c.characterSheetImage)
+                  .filter((c) => (cover.characterIds || []).includes(c.id))
                   .map((c) => c.name)
                   .join(", ") ||
-                  "None approved — generate and lock character sheets in Character Studio to reuse their likeness."}{" "}
+                  "None selected — select the characters to include below; leave empty for a cover without people."}{" "}
                 Visual style:{" "}
                 {p.visualStyle.status === "locked" && p.visualStyle.previewImage
                   ? "approved sample and style description"
@@ -1904,6 +1892,16 @@ export default function BookEditor() {
                 aligned.
               </p>
               <fieldset disabled={operationBusy}>
+                <CharacterChoices
+                  characters={p.characters}
+                  selectedIds={cover.characterIds || []}
+                  onChange={(characterIds) => patchCover({ characterIds })}
+                />
+                <p className="help">
+                  Selected characters must have generated, locked sheets in
+                  Character Studio. Only selected characters appear on the
+                  cover.
+                </p>
                 <Field
                   label="Cover instructions"
                   hint="Describe the subjects, setting, mood, colors and key details. Title and subtitle are added by the app, not the image model."

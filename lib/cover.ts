@@ -1,6 +1,7 @@
 import type { BookProject, CoverDesign, GenerationRecipe } from "./model";
 export const emptyCover = (): CoverDesign => ({
   instructions: "",
+  characterIds: [],
   referencePhotos: [],
   illustrationVersions: [],
 });
@@ -10,10 +11,14 @@ export function coverRecipe(project: BookProject): GenerationRecipe {
     throw new Error("Upload a cover photo or write cover instructions first.");
   return {
     kind: "cover",
-    characters: project.characters.filter(
-      (character) =>
-        character.status === "locked" && character.characterSheetImage,
-    ),
+    characters: (cover.characterIds || []).map((id) => {
+      const character = project.characters.find((c) => c.id === id);
+      if (!character)
+        throw new Error(
+          "A selected character is missing from Character Studio. Update the cover cast before generating.",
+        );
+      return character;
+    }),
     visualStyle: project.visualStyle,
     scene:
       cover.instructions.trim() ||
