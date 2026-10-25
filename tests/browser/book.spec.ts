@@ -120,7 +120,7 @@ test("complete local book workflow, reload, locked pages and square PDF", async 
     "Our first day",
   );
   await expect(page.getByAltText("Our first day")).toBeVisible();
-  await page.getByRole("button", { name: /Export PDF$/ }).click();
+  await page.getByRole("button", { name: /Export PDF & JPEG$/ }).click();
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Export Book as PDF" }).click();
   const download = await downloadPromise;
@@ -183,7 +183,7 @@ test("export rejects overflowing text rather than clipping it", async ({
   await page
     .getByLabel("The words on this page")
     .fill("A very long adventure. ".repeat(300));
-  await page.getByRole("button", { name: /Export PDF$/ }).click();
+  await page.getByRole("button", { name: /Export PDF & JPEG$/ }).click();
   await page.getByRole("button", { name: "Export Book as PDF" }).click();
   await expect(page.locator(".global-error")).toContainText(
     "more text than fits",

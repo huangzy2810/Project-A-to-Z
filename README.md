@@ -34,7 +34,7 @@ The endpoint uses the server’s credential and has no application authenticatio
 4. Choose fonts, sizes, alignment and text placement.
 5. Add chapters and individual pages, choose characters, and upload up to four scene photos (chapter and page photos combined) to draft the current page’s scene text. An empty “What happens on this page?” is filled automatically; existing text is preserved and a reviewable draft appears with **Use photo draft** and **Discard photo draft**. Refine the text and replace positional labels with character names as needed, then generate illustrations (AI or samples, according to your settings). Try Again retains the selected version’s generation recipe; Edit & Regenerate uses current inputs. Select an earlier version at any time before locking.
 6. Add a closing letter and family photo. Optionally open **Re-create Cover** to upload cover photos and/or write freeform cover instructions. Then upload photographs for the memories section.
-7. Review all pages and export an 8 × 8 inch PDF.
+7. Review all pages and open **Export PDF & JPEG** to download an 8 × 8 inch PDF or a ZIP of sequential JPEG pages.
 
 The Book Drawer and numbered progress navigation provide direct access to every section. Inputs are on the left; output is on the right. On mobile, these stack vertically.
 
@@ -48,6 +48,8 @@ The Book Drawer and numbered progress navigation provide direct access to every 
 - `app/api/illustrations/route.ts`: uncached configuration status and a server-only generation endpoint. No secret is returned to the browser.
 - `lib/server/`: upload schema/size validation, same-origin request handling and a provider abstraction backed by the official OpenAI SDK. Image bytes are returned to the browser; the server does not store project data or photos.
 - `components/BookPage.tsx`: shared square-page rendering and reading order for both preview and export.
+- `lib/jpeg.ts`: browser-side JPEG export, streamed ZIP packaging via `fflate`, sequential filenames and one download for the whole book.
+- `lib/page-export.ts`: shared PDF/JPEG page rendering and validation.
 - `lib/pdf.ts`: browser-side PDF export using the same page renderer, 2400 × 2400 rasterization, exact 576 × 576 point pages and ¼ inch text-safe areas.
 
 Meaningful edits autosave with a short debounce; pagehide flushes current metadata. Reload restores the project. Corrupted metadata is retained rather than silently replaced. The UI reports upload, storage, generation and export errors. Reset Project requires confirmation and clears local metadata and image assets.
@@ -68,6 +70,14 @@ Open **Regenerate all chapter illustrations** to queue eligible pages across eve
 The queue panel remains visible across sections and shows waiting, generating, ready and failed jobs, plus elapsed seconds for each completed attempt (including failures). **Stop after current image** cancels waiting jobs and lets the active request finish. Failed/canceled jobs require an explicit **Retry**; a failure does not stop other valid pages. Retries use the saved job snapshot. If approvals changed, queue the page again with **Edit & Regenerate** instead.
 
 Keep the app open in one browser tab while processing. This is a browser-managed queue, not a server worker that continues after closing the app. Queue metadata is stored separately for each v3 book at `ava-book-generation-queue-v3:<book-id>`. Reload pauses waiting jobs until **Resume waiting jobs** is clicked. A request interrupted by closing/reloading is marked separately and is never automatically replayed because it may already have used API credits; inspect saved results before choosing **Retry**. Completed images remain saved with the book. Browser storage failures halt dispatch before more requests start. Reset clears the current book’s queue as well as its v3 data.
+
+## Export the book as JPEG pages
+
+Open **Export PDF & JPEG** and click **Export Book as JPEG (ZIP)**. One download contains a high-quality 2400 × 2400 JPEG for each composed book page, including text and selected artwork. Pages follow reading order: cover (Page 1), chapter pages, closing letter, then photo-memory pages. The selected re-created cover is used when present. PDF export remains available.
+
+The archive is named `BOOK NAME - JPEG Pages.zip`. Inside, filenames follow `BOOK NAME - Page X.jpg`, preserving your book title's case, spaces and Unicode. Page numbers are padded to the total page-count width when needed (for example `BOOK NAME - Page 01.jpg` through `BOOK NAME - Page 12.jpg`) so normal filename sorting keeps them in sequence. Invalid filesystem characters are replaced and very long titles are shortened for filename safety. There are no extra files in the archive.
+
+PDF and JPEG use the same page renderer, selected versions, image readiness checks and overflow protection. JPEG export shows progress and processes pages sequentially; it refuses overflowing story text or missing images instead of downloading an incomplete archive. JPEG files are already compressed, so ZIP packages them without additional compression. Export works locally without AI calls; the chapter queue must be idle. Rendering at 2400 pixels does not add detail to lower-resolution source images.
 
 ## Re-create the cover
 

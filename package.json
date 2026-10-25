@@ -12,6 +12,7 @@
     "format": "prettier --write app components lib tests playwright.config.ts"
   },
   "dependencies": {
+    "fflate": "0.8.3",
     "html-to-image": "^1.11.13",
     "jspdf": "^3.0.3",
     "next": "^15.5.0",

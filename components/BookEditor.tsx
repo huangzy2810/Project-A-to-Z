@@ -47,6 +47,7 @@ import {
 import { AssetImage, BookPage, orderedPages, RenderPage } from "./BookPage";
 import DropZone from "./DropZone";
 import { exportPdf } from "@/lib/pdf";
+import { exportJpegs } from "@/lib/jpeg";
 import {
   generationApprovalIssues,
   referenceAssets,
@@ -62,7 +63,7 @@ const steps = [
   "Re-create Cover",
   "Photo Memories",
   "Book Preview",
-  "Export PDF",
+  "Export PDF & JPEG",
 ];
 function Field({
   label,
@@ -277,6 +278,7 @@ export default function BookEditor() {
     }
   }
   function go(n: number) {
+    if (busy) return;
     setStep(n);
     setError("");
     setDrawer(false);
@@ -686,20 +688,22 @@ export default function BookEditor() {
       setBusy("");
     }
   }
-  async function download() {
-    setBusy("pdf");
+  async function download(format: "pdf" | "jpeg") {
+    setBusy(format);
     setError("");
     setExportProgress(0);
     try {
       await new Promise((r) => setTimeout(r, 200));
-      await exportPdf(
+      await (format === "jpeg" ? exportJpegs : exportPdf)(
         Array.from(exportRoot.current!.children) as HTMLElement[],
         p.title,
         setExportProgress,
       );
     } catch (e) {
       setError(
-        e instanceof Error ? e.message : "PDF export failed. Please try again.",
+        e instanceof Error
+          ? e.message
+          : "Book export failed. Please try again.",
       );
     } finally {
       setBusy("");
@@ -922,7 +926,7 @@ export default function BookEditor() {
                     ? "Generating sends this illustration’s references to OpenAI. It may take up to three minutes and uses your API credits."
                     : "Your existing images and book stay safely saved."}
               </p>
-              {busy && busy !== "pdf" && (
+              {busy && busy !== "pdf" && busy !== "jpeg" && (
                 <span>
                   Creating a new illustration… Your previous versions are safe.
                 </span>
@@ -2131,13 +2135,30 @@ export default function BookEditor() {
                   <button
                     className="primary wide"
                     disabled={operationBusy}
-                    onClick={download}
+                    onClick={() => download("pdf")}
                   >
                     {busy === "pdf"
                       ? `Preparing page ${exportProgress} of ${allPages.length}…`
                       : "Export Book as PDF"}{" "}
                     <span>↓</span>
                   </button>
+                  <button
+                    className="primary wide"
+                    disabled={operationBusy}
+                    onClick={() => download("jpeg")}
+                  >
+                    {busy === "jpeg"
+                      ? `Preparing JPEG page ${exportProgress} of ${allPages.length}…`
+                      : "Export Book as JPEG (ZIP)"}{" "}
+                    ↓
+                  </button>
+                  <p className="help">
+                    JPEG export downloads one ZIP containing a 2400 × 2400 image
+                    for every page, including the cover, in reading order.
+                    Filenames use “BOOK NAME - Page X.jpg”. Page numbers are
+                    zero-padded for books with 10 or more pages so filename
+                    sorting keeps them in sequence.
+                  </p>
                   <p className="help">
                     AI illustrations are generated at 1024 × 1024 pixels. PDF
                     pages render at 300 DPI, but enlarging an image does not add
@@ -2348,7 +2369,7 @@ export default function BookEditor() {
           </section>
         </div>
       )}
-      {busy === "pdf" && (
+      {(busy === "pdf" || busy === "jpeg") && (
         <div ref={exportRoot} className="export-pages" aria-hidden="true">
           {allPages.map((x) => (
             <BookPage key={x.id} project={p} page={x} />

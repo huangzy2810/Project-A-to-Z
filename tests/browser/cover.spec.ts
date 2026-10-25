@@ -132,7 +132,7 @@ test("cover step follows closing letter, accepts photos/text, preserves versions
   await expect(
     page.getByRole("heading", { name: "Re-create Cover", exact: true }),
   ).toBeVisible();
-  await page.getByRole("button", { name: /Export PDF$/ }).click();
+  await page.getByRole("button", { name: /Export PDF & JPEG$/ }).click();
   const download = page.waitForEvent("download");
   await page.getByRole("button", { name: "Export Book as PDF" }).click();
   await expect(
