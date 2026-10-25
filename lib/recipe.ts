@@ -3,11 +3,12 @@ export const MAX_REFERENCES = 16;
 export interface ReferenceAsset {
   id: string;
   label: string;
-  role: "identity" | "style" | "scene-layout" | "original";
+  role: "identity" | "style" | "scene-layout" | "cover" | "original";
 }
 export function prepareGenerationRecipe(
   input: GenerationRecipe,
 ): GenerationRecipe {
+  if (input.kind === "cover") return { ...input, characters: [] };
   if (input.kind === "scene" || !input.kind)
     return { ...input, kind: "scene", references: [] };
   if (input.kind !== "style") return input;
@@ -71,12 +72,16 @@ export function referenceAssets(input: GenerationRecipe): ReferenceAsset[] {
         ? `Character identity photo ${i + 1}`
         : input.kind === "style"
           ? `Visual style reference ${i + 1}`
-          : `Scene reference ${i + 1} (background, placement and clothing only)`,
+          : input.kind === "cover"
+            ? `Cover photo reference ${i + 1}: subjects, likeness and setting`
+            : `Scene reference ${i + 1} (background, placement and clothing only)`,
       input.kind === "character"
         ? "identity"
         : input.kind === "style"
           ? "style"
-          : "scene-layout",
+          : input.kind === "cover"
+            ? "cover"
+            : "scene-layout",
     ),
   );
   return references;
@@ -88,7 +93,9 @@ export function assemblePrompt(input: GenerationRecipe): string {
   return [
     input.tweak
       ? "Repair Image 1 only in the transparent area of the supplied mask. Keep the original composition, lighting, story meaning and visual style. Return the complete illustration at the same square framing, changing only the marked area. No lettering or story text."
-      : "Create one square children’s storybook illustration. Render artwork only; story text is added separately.",
+      : input.kind === "cover"
+        ? "Create one square children's storybook front-cover illustration. Artwork only: no title, subtitle, letters or watermarks. The app lays out the book title and subtitle separately."
+        : "Create one square children’s storybook illustration. Render artwork only; story text is added separately.",
     ...(input.tweak
       ? [
           `Requested local change: ${input.tweak.feedback}`,
@@ -99,7 +106,9 @@ export function assemblePrompt(input: GenerationRecipe): string {
       ? "Create a canonical face-only identity sheet in a clean 2 × 2 grid. Show exactly four tightly cropped views of the same person: front, three-quarter, side profile, and front smiling. Keep facial identity, age, hair and skin tone identical across all four views. Show only face, natural hair and ears, cropped tightly below the chin, on a plain neutral background. No neck, shoulders, torso, full body, clothing, collars, hats, jewelry, accessories, props, scenery, additional people or labels. Extract facial identity from uploaded photos and ignore their clothing and surroundings. Facial identity takes precedence over any clothing or non-face details in the description."
       : input.kind === "style"
         ? "Create an uninhabited background-only sample of the requested illustration style. No people, characters, faces, silhouettes or animals, even if they appear in uploaded style references."
-        : "Illustrate this story scene with only the requested characters.",
+        : input.kind === "cover"
+          ? "Create an inviting cover guided by the supplied photos and freeform instructions. Cover photos may guide people, recognizable likeness, clothing, poses, composition and setting. Preserve key photo details unless the instructions request changes. Style references govern visual treatment only; do not copy people from style references. Leave quiet space in the lower third for the book title and subtitle."
+          : "Illustrate this story scene with only the requested characters.",
     ...input.characters.map((c) =>
       c.status === "locked"
         ? `Preserve character identity: ${c.name}, ${c.description}. Keep facial features, hairstyle, approximate age and facial proportions consistent with their attached references.`
@@ -139,9 +148,11 @@ export function assemblePrompt(input: GenerationRecipe): string {
           ]
         : [],
     ),
-    references.length
-      ? "Use approved identity images exclusively for facial identity, hair, skin tone and age, and style images only for visual treatment. Use scene images for backgrounds, spatial placement and clothing, never photographed people’s likeness or physical features. Transfer garments and accessories onto the approved cast without copying the wearer’s identity. Render only selected approved characters. Explicit written outfits and actions take priority."
-      : "No image references supplied; follow the descriptions.",
+    input.kind === "cover"
+      ? "Use cover photos for the requested cover subjects and likeness, and approved style images only for visual treatment. Keep photographic subjects in the chosen illustration style. Follow written cover instructions; never render story text, captions or lettering."
+      : references.length
+        ? "Use approved identity images exclusively for facial identity, hair, skin tone and age, and style images only for visual treatment. Use scene images for backgrounds, spatial placement and clothing, never photographed people’s likeness or physical features. Transfer garments and accessories onto the approved cast without copying the wearer’s identity. Render only selected approved characters. Explicit written outfits and actions take priority."
+        : "No image references supplied; follow the descriptions.",
     `Exclude: text, lettering, watermarks, extra limbs, unintended duplicate characters, ${input.exclusions || "unrelated foreground objects"}.`,
   ]
     .filter(Boolean)

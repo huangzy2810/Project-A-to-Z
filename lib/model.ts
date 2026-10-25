@@ -50,13 +50,13 @@ export interface GenerationRecipe {
   composition: string;
   requiredElements?: string;
   exclusions: string;
-  kind?: "character" | "style" | "scene";
+  kind?: "character" | "style" | "scene" | "cover";
 }
 export interface IllustrationVersion {
   referenceManifest?: {
     id: string;
     label: string;
-    role?: "identity" | "style" | "scene-layout" | "original";
+    role?: "identity" | "style" | "scene-layout" | "cover" | "original";
   }[];
   width?: number;
   height?: number;
@@ -96,7 +96,14 @@ export interface Chapter {
   referencePhotos: string[];
   pages: StoryPage[];
 }
+export interface CoverDesign {
+  instructions: string;
+  referencePhotos: string[];
+  illustrationVersions: IllustrationVersion[];
+  selectedIllustrationId?: string;
+}
 export interface BookProject {
+  cover?: CoverDesign;
   generationMode?: "auto" | "mock";
   schemaVersion: 1;
   id: string;
@@ -250,6 +257,13 @@ export function assertProject(value: unknown): asserts value is BookProject {
     p.schemaVersion !== 1 ||
     typeof p.id !== "string" ||
     typeof p.title !== "string" ||
+    (p.cover !== undefined &&
+      (!p.cover ||
+        typeof p.cover.instructions !== "string" ||
+        !Array.isArray(p.cover.referencePhotos) ||
+        !Array.isArray(p.cover.illustrationVersions) ||
+        (p.cover.selectedIllustrationId !== undefined &&
+          typeof p.cover.selectedIllustrationId !== "string"))) ||
     !p.settings ||
     !p.typography ||
     !p.visualStyle ||

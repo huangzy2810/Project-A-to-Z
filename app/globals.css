@@ -1254,3 +1254,30 @@ footer > span {
   width: auto;
   margin-right: 0.5rem;
 }
+
+.generated-cover-image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.generated-cover-copy {
+  position: absolute;
+  left: 7%;
+  right: 7%;
+  bottom: 6%;
+  padding: 3%;
+  border-radius: 8px;
+  background: rgba(255, 250, 240, 0.92);
+  text-align: center;
+}
+.generated-cover-copy h2 {
+  margin: 0 0 0.3em;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+.generated-cover-copy p {
+  margin: 0;
+  line-height: 1.4;
+}

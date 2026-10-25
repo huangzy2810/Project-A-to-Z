@@ -56,7 +56,7 @@ const recipeSchema = z.object({
   composition: text,
   requiredElements: text.optional(),
   exclusions: text,
-  kind: z.enum(["character", "style", "scene"]).optional(),
+  kind: z.enum(["character", "style", "scene", "cover"]).optional(),
 });
 const MAX_BODY = 28 * 1024 * 1024;
 const MAX_FILE = 8 * 1024 * 1024;

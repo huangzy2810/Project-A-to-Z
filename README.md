@@ -33,7 +33,7 @@ The endpoint uses the server’s credential and has no application authenticatio
 3. Add photos and descriptions for Ava, Mama and Papa. Generate and lock their character sheets using the approved visual style.
 4. Choose fonts, sizes, alignment and text placement.
 5. Add chapters and individual pages, choose characters, and upload up to four scene photos (chapter and page photos combined) to draft the current page’s scene text. An empty “What happens on this page?” is filled automatically; existing text is preserved and a reviewable draft appears with **Use photo draft** and **Discard photo draft**. Refine the text and replace positional labels with character names as needed, then generate illustrations (AI or samples, according to your settings). Try Again retains the selected version’s generation recipe; Edit & Regenerate uses current inputs. Select an earlier version at any time before locking.
-6. Add a closing letter and family photo, then upload photographs for the memories section.
+6. Add a closing letter and family photo. Optionally open **Re-create Cover** to upload cover photos and/or write freeform cover instructions. Then upload photographs for the memories section.
 7. Review all pages and export an 8 × 8 inch PDF.
 
 The Book Drawer and numbered progress navigation provide direct access to every section. Inputs are on the left; output is on the right. On mobile, these stack vertically.
@@ -68,6 +68,14 @@ Open **Regenerate all chapter illustrations** to queue eligible pages across eve
 The queue panel remains visible across sections and shows waiting, generating, ready and failed jobs, plus elapsed seconds for each completed attempt (including failures). **Stop after current image** cancels waiting jobs and lets the active request finish. Failed/canceled jobs require an explicit **Retry**; a failure does not stop other valid pages. Retries use the saved job snapshot. If approvals changed, queue the page again with **Edit & Regenerate** instead.
 
 Keep the app open in one browser tab while processing. This is a browser-managed queue, not a server worker that continues after closing the app. Queue metadata is stored separately for each v3 book at `ava-book-generation-queue-v3:<book-id>`. Reload pauses waiting jobs until **Resume waiting jobs** is clicked. A request interrupted by closing/reloading is marked separately and is never automatically replayed because it may already have used API credits; inspect saved results before choosing **Retry**. Completed images remain saved with the book. Browser storage failures halt dispatch before more requests start. Reset clears the current book’s queue as well as its v3 data.
+
+## Re-create the cover
+
+**Re-create Cover** appears immediately after **Closing Letter** in the workflow and Book Drawer. Upload photos, write **Cover instructions**, or use both, then click **Re-create cover**. A photo-only request receives a default cover brief; text-only generation also works. Photos go directly to the cover image request and can guide subjects, likeness, clothing, poses and setting. This is separate from chapter scene-photo drafting: chapter illustration requests still exclude scene photos. Approved visual style references are used when available; character/style approval is not required to generate a cover.
+
+Cover generation uses the current illustration mode and `gpt-image-2.5-flare` for AI requests. It waits until the chapter queue is idle to avoid overlapping generations. AI requests consume API credits; sample covers are placeholders and do not reproduce uploaded likenesses. Empty input is disabled. A failed request keeps the selected cover and all versions. Every success appends a version; choose an earlier version or **Use original cover** without deleting history. Inputs, images and the selected version persist in v3 browser storage. Existing books retain the original cover until a new one is selected.
+
+The selected cover is the first printed page in preview and PDF export; placing the editor step after Closing Letter does not change reading order or add a page. The app overlays the title and subtitle from Book Setup on a light panel over the lower part of the artwork, rather than asking the image model to draw lettering. Cover prompts reserve quiet space there. **Edit this page** on the preview cover returns to the cover editor. The later Photo Memories, Book Preview and Export steps retain their behavior. Whole-book chapter regeneration does not regenerate the cover.
 
 ## Delete pages and chapters
 

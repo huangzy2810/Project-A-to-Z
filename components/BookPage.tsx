@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { getAsset } from "@/lib/storage";
 import { BookProject, Typography, StoryPage } from "@/lib/model";
+import { selectedCoverVersion } from "@/lib/cover";
 export function AssetImage({
   id,
   alt = "",
@@ -62,7 +63,8 @@ export function orderedPages(p: BookProject): RenderPage[] {
       kind: "cover",
       title: p.title,
       text: p.settings.subtitle,
-      editStep: 0,
+      image: selectedCoverVersion(p)?.image,
+      editStep: 6,
     },
     ...p.chapters.flatMap((c) =>
       c.pages.map((s: StoryPage) => ({
@@ -106,7 +108,7 @@ export function orderedPages(p: BookProject): RenderPage[] {
           i * p.exportSettings.memoryLayout,
           (i + 1) * p.exportSettings.memoryLayout,
         ),
-        editStep: 6,
+        editStep: 7,
       }),
     ),
   ];
@@ -130,7 +132,28 @@ export function BookPage({
         textAlign: t.alignment,
       }}
     >
-      {page.kind === "cover" ? (
+      {page.kind === "cover" && page.image ? (
+        <>
+          <AssetImage
+            id={page.image}
+            alt="Generated book cover"
+            className="generated-cover-image"
+          />
+          <div className="generated-cover-copy">
+            <h2
+              style={{
+                fontFamily: t.headingFont,
+                fontSize: `${(t.headingSize * 1.3) / 6}cqw`,
+              }}
+            >
+              {page.title}
+            </h2>
+            <p style={{ fontSize: `${(t.bodySize * 0.85) / 6}cqw` }}>
+              {page.text}
+            </p>
+          </div>
+        </>
+      ) : page.kind === "cover" ? (
         <>
           <div className="cover-border">
             <span className="cover-small">A STORY TO KEEP FOREVER</span>

@@ -1,5 +1,7 @@
 "use client";
 import ImageTweaker from "./ImageTweaker";
+import { coverRecipe, emptyCover, selectedCoverVersion } from "@/lib/cover";
+import type { CoverDesign } from "@/lib/model";
 import {
   deleteBookPage,
   deleteBookChapter,
@@ -57,6 +59,7 @@ const steps = [
   "Typography & Layout",
   "Chapter Builder",
   "Closing Letter",
+  "Re-create Cover",
   "Photo Memories",
   "Book Preview",
   "Export PDF",
@@ -333,6 +336,8 @@ export default function BookEditor() {
   );
   const operationBusy = !!busy || queueActive;
   const allPages = orderedPages(p);
+  const cover = p.cover || emptyCover();
+  const selectedCover = selectedCoverVersion(p);
   const preview = allPages[Math.min(previewIndex, allPages.length - 1)];
   function patchCharacter(patch: Partial<Character>) {
     change((p) => ({
@@ -641,6 +646,46 @@ export default function BookEditor() {
       generationRef.current = false;
     }
   }
+  function patchCover(patch: Partial<CoverDesign>) {
+    change((current) => ({
+      ...current,
+      cover: { ...(current.cover || emptyCover()), ...patch },
+    }));
+  }
+  async function generateCover() {
+    if (generationRef.current || queueActive) return;
+    generationRef.current = true;
+    setBusy("cover");
+    setError("");
+    try {
+      const input = coverRecipe(p);
+      const service = await illustrationService(
+        p.generationMode || "auto",
+        setGenerationInfo,
+      );
+      const version = await service.generate(input);
+      change((current) => ({
+        ...current,
+        cover: {
+          ...(current.cover || emptyCover()),
+          illustrationVersions: [
+            ...(current.cover?.illustrationVersions || []),
+            version,
+          ],
+          selectedIllustrationId: version.id,
+        },
+      }));
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? e.message
+          : "Cover generation failed. Your previous cover is safe.",
+      );
+    } finally {
+      generationRef.current = false;
+      setBusy("");
+    }
+  }
   async function download() {
     setBusy("pdf");
     setError("");
@@ -732,11 +777,12 @@ export default function BookEditor() {
         }}
       />
     );
+  if (step === 6) right = <BookPage project={p} page={allPages[0]} />;
   if (step === 5)
     right = (
       <BookPage project={p} page={allPages.find((x) => x.kind === "letter")!} />
     );
-  if (step === 6)
+  if (step === 7)
     right = p.photoMemories.length ? (
       <BookPage
         project={p}
@@ -753,7 +799,7 @@ export default function BookEditor() {
         </p>
       </div>
     );
-  if (step >= 7) right = <BookPage project={p} page={preview} />;
+  if (step >= 8) right = <BookPage project={p} page={preview} />;
   return (
     <div className="app-shell">
       <header>
@@ -797,6 +843,7 @@ export default function BookEditor() {
               "Make room for every word.",
               "One little adventure at a time.",
               "A few words from the heart.",
+              "A fresh beginning for your book.",
               "Keep the real moments, too.",
               "Your story, from beginning to end.",
               "A keepsake, ready to take home.",
@@ -812,6 +859,7 @@ export default function BookEditor() {
               "Let your words and pictures find their perfect balance.",
               "Tell the story on the left. Watch it come to life on the right.",
               "A letter she can return to, again and again.",
+              "Re-create the cover with your photos and imagination.",
               "The photographs that bring you right back.",
               "Turn through the pages you’ve made together.",
               "A square 8 × 8 inch book, made with love.",
@@ -1830,6 +1878,103 @@ export default function BookEditor() {
           {step === 6 && (
             <>
               <p className="section-description">
+                Create a new front cover using photos, freeform instructions, or
+                both. The cover remains the first printed page. Book Setup
+                controls the title and subtitle shown over the artwork.
+              </p>
+              <fieldset disabled={operationBusy}>
+                <Field
+                  label="Cover instructions"
+                  hint="Describe the subjects, setting, mood, colors and key details. Title and subtitle are added by the app, not the image model."
+                >
+                  <textarea
+                    rows={6}
+                    maxLength={5000}
+                    value={cover.instructions}
+                    onChange={(e) =>
+                      patchCover({ instructions: e.target.value })
+                    }
+                    placeholder="For example: Ava and her parents exploring the Shanghai waterfront at sunset, with a warm watercolor feeling."
+                  />
+                </Field>
+                <p className="help">
+                  Optional cover photos guide subjects, likeness and
+                  composition. These photos are sent directly for cover
+                  generation; chapter scene photos remain excluded from chapter
+                  illustration requests.
+                </p>
+                <DropZone
+                  label="Cover reference photos"
+                  images={cover.referencePhotos}
+                  disabled={operationBusy}
+                  onChange={(ids) => patchCover({ referencePhotos: ids })}
+                />
+              </fieldset>
+              <div className="actions">
+                <button
+                  className="primary"
+                  disabled={
+                    operationBusy ||
+                    (!cover.instructions.trim() &&
+                      !cover.referencePhotos.length)
+                  }
+                  onClick={generateCover}
+                >
+                  {busy === "cover" ? "Creating cover…" : "Re-create cover"}
+                </button>
+                <button
+                  disabled={operationBusy || !cover.selectedIllustrationId}
+                  onClick={() =>
+                    patchCover({ selectedIllustrationId: undefined })
+                  }
+                >
+                  Use original cover
+                </button>
+              </div>
+              <p className="help">
+                Previous covers stay saved. Cover generation uses the current
+                illustration mode and runs after any chapter queue has finished.
+              </p>
+              {selectedCover && (
+                <p className="help">
+                  {selectedCover.model.startsWith("mock")
+                    ? "Sample cover · uploaded photo likeness is not reproduced"
+                    : `Generated with ${selectedCover.model}`}
+                </p>
+              )}
+              {!!cover.illustrationVersions.length && (
+                <div className="versions" aria-label="Cover versions">
+                  <span>Cover versions</span>
+                  {cover.illustrationVersions.map((version, i) => (
+                    <button
+                      key={version.id}
+                      disabled={operationBusy}
+                      className={
+                        cover.selectedIllustrationId === version.id
+                          ? "selected"
+                          : ""
+                      }
+                      onClick={() =>
+                        patchCover({ selectedIllustrationId: version.id })
+                      }
+                    >
+                      {i + 1}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <details>
+                <summary>View cover recipe</summary>
+                <pre>
+                  {selectedCover?.prompt ||
+                    "Generate a cover to see its recipe."}
+                </pre>
+              </details>
+            </>
+          )}
+          {step === 7 && (
+            <>
+              <p className="section-description">
                 A little album at the end of your adventure.
               </p>
               <Field label="Photos on each page">
@@ -1906,7 +2051,7 @@ export default function BookEditor() {
               ))}
             </>
           )}
-          {step >= 7 && (
+          {step >= 8 && (
             <>
               <p className="section-description">
                 {allPages.length} pages of memories, in the order they’ll appear
@@ -1944,7 +2089,7 @@ export default function BookEditor() {
                   </button>
                 ))}
               </div>
-              {step === 7 ? (
+              {step === 8 ? (
                 <button
                   className="primary wide"
                   onClick={() => {
@@ -2011,7 +2156,7 @@ export default function BookEditor() {
         <section className="preview-page">
           <div className="page-heading">
             <span className="eyebrow">
-              {step >= 7 ? "YOUR BOOK" : "A LITTLE PREVIEW"}
+              {step >= 8 ? "YOUR BOOK" : "A LITTLE PREVIEW"}
             </span>
             <span className="small-status">8 × 8 INCHES</span>
           </div>
@@ -2040,7 +2185,7 @@ export default function BookEditor() {
                     : "Your words. Your memories. Your story."}
             </p>
           </div>
-          {step >= 7 && (
+          {step >= 8 && (
             <div className="preview-nav">
               <button
                 disabled={previewIndex === 0}
@@ -2075,7 +2220,7 @@ export default function BookEditor() {
         </span>
         <button
           className="next-button"
-          disabled={step === 8 || !!busy}
+          disabled={step === 9 || !!busy}
           onClick={() => go(step + 1)}
         >
           Next chapter →
