@@ -106,6 +106,9 @@ test("complete local book workflow, reload, locked pages and square PDF", async 
   ).toBeVisible();
   await page.getByRole("button", { name: /Photo Memories$/ }).click();
   await page
+    .getByRole("button", { name: "Add memory page", exact: true })
+    .click();
+  await page
     .locator("input[type=file]")
     .setInputFiles({ name: "trip.png", mimeType: "image/png", buffer: photo });
   await expect(page.getByLabel("Memory 1 · caption")).toBeVisible();

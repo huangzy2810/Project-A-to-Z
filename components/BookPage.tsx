@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { getAsset } from "@/lib/storage";
 import { BookProject, Typography, StoryPage } from "@/lib/model";
+import { memoryPages } from "@/lib/photo-memory-pages";
 import { selectedCoverVersion } from "@/lib/cover";
 export function AssetImage({
   id,
@@ -94,23 +95,15 @@ export function orderedPages(p: BookProject): RenderPage[] {
       image: p.closingMessage.photo,
       editStep: 5,
     },
-    ...Array.from(
-      {
-        length: Math.ceil(
-          p.photoMemories.length / p.exportSettings.memoryLayout,
-        ),
-      },
-      (_, i) => ({
-        id: `memories-${i}`,
-        kind: "memories" as const,
-        title: "Our Shanghai Memories",
-        photos: p.photoMemories.slice(
-          i * p.exportSettings.memoryLayout,
-          (i + 1) * p.exportSettings.memoryLayout,
-        ),
-        editStep: 7,
-      }),
-    ),
+    ...memoryPages(p).map((page) => ({
+      id: `memories-${page.id}`,
+      kind: "memories" as const,
+      title: "Our Shanghai Memories",
+      photos: page.photoIds.flatMap((id) =>
+        p.photoMemories.filter((photo) => photo.id === id),
+      ),
+      editStep: 7,
+    })),
   ];
 }
 export function BookPage({

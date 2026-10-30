@@ -1,6 +1,6 @@
 # Ava’s Shanghai Adventure Book Creator
 
-MVP v3 of a local-first family storybook creator, built with Next.js, React and TypeScript. This branch is `mvp-v3`; `main` remains MVP v2. Real OpenAI image generation and photo-to-scene drafting are available with a server-side credential; sample artwork remains available without one. There are no accounts or cloud database. V3 uses separate browser storage (`ava-book-project-v3` and IndexedDB `ava-book-assets-v3`), so it does not read, overwrite or reset v2 books. V3 starts a separate book; automatic v2 import is not included. Continue using v2 in its original Codespace/browser URL to access its saved book.
+MVP v4 of a local-first family storybook creator, built with Next.js, React and TypeScript. This branch is `mvp-v4`; `mvp-v3` remains MVP v3 and `main` remains MVP v2. V4 continues to use the v3 browser storage keys and asset database to preserve existing books at the same browser URL. Real OpenAI image generation and photo-to-scene drafting are available with a server-side credential; sample artwork remains available without one. There are no accounts or cloud database. V3 uses separate browser storage (`ava-book-project-v3` and IndexedDB `ava-book-assets-v3`), so it does not read, overwrite or reset v2 books. V3 starts a separate book; automatic v2 import is not included. Continue using v2 in its original Codespace/browser URL to access its saved book.
 
 ## Run locally
 
@@ -125,3 +125,11 @@ One book lives in one browser profile on one device. Clearing browser data remov
 Cover recreation reuses the selected, locked Character Studio sheets for likeness and the approved Visual Style sample for palette, medium, and texture. Uploaded cover photos guide outfits, poses, and setting; approved character identities take priority. Typography & Layout settings guide title space and render the actual cover title and subtitle in preview, PDF, and JPEG exports. Without approved sheets or a style sample, the cover page explains which references are missing; text/photo-only generation remains available.
 
 Re-create Cover includes the same “Who appears in this scene?” checkboxes as Chapter Builder. Only checked characters are sent for cover generation, with their descriptions and approved sheets. Selected characters must be generated and locked before generating. An empty selection produces a cover without people. Existing covers retain their image history; choose the cast before generating a new version.
+
+## MVP v4 editing changes
+
+Book Setup shows only “Generated images will appear here.” in its right panel. Character Studio supports deleting any character, including the last one; confirmation removes their chapter/cover selections but retains previously generated artwork and its history. Add a new character with **+ Add**. Deletion is disabled while a generation is running or queued.
+
+Photo Memories has explicit page tabs, **Add memory page**, and **Delete memory page**. Photos, captions, and positioning belong to the selected page; its preview follows the selection. Deletion requires confirmation and removes that page from preview, PDF, and JPEG exports. Empty pages are included until deleted. Existing books retain their photos and captions in reading order. Extra uploads split into additional pages according to the selected photos-per-page layout, so photos are never silently omitted. Deleting pages or characters does not remove underlying image blobs shared by other content.
+
+These changes retain the existing local browser persistence; they do not add accounts, cloud syncing, or resolve the localStorage capacity limit.

@@ -1,4 +1,10 @@
 "use client";
+import {
+  memoryPages,
+  setMemoryPagePhotos,
+  deleteMemoryPage,
+} from "@/lib/photo-memory-pages";
+import { deleteCharacter } from "@/lib/characters";
 import { CharacterChoices } from "@/components/CharacterChoices";
 import ImageTweaker from "./ImageTweaker";
 import { coverRecipe, emptyCover, selectedCoverVersion } from "@/lib/cover";
@@ -93,6 +99,7 @@ export default function BookEditor() {
   const [step, setStep] = useState(0);
   const [drawer, setDrawer] = useState(false);
   const [settings, setSettings] = useState(false);
+  const [memoryPageIndex, setMemoryPageIndex] = useState(0);
   const [characterIndex, setCharacterIndex] = useState(0);
   const [chapterIndex, setChapterIndex] = useState(0);
   const [pageIndex, setPageIndex] = useState(0);
@@ -331,7 +338,22 @@ export default function BookEditor() {
           : generationInfo.available
             ? "AI illustrations"
             : "Sample artwork · AI not configured";
-  const character = p.characters[characterIndex] || p.characters[0];
+  const character: Character = p.characters[characterIndex] ||
+    p.characters[0] || {
+      id: "",
+      name: "",
+      description: "",
+      relationship: "",
+      referencePhotos: [],
+      status: "draft",
+    };
+  const memories = memoryPages(p);
+  const memoryPage = memories[Math.min(memoryPageIndex, memories.length - 1)];
+  const memoryPhotos = memoryPage
+    ? memoryPage.photoIds.flatMap((id) =>
+        p.photoMemories.filter((photo) => photo.id === id),
+      )
+    : [];
   const chapter = p.chapters[chapterIndex] || p.chapters[0];
   const page = chapter?.pages[pageIndex] || chapter?.pages[0];
   const pageQueued = jobs.some(
@@ -724,6 +746,12 @@ export default function BookEditor() {
           ? page.status === "locked"
           : false;
   let right: React.ReactNode = <BookPage project={p} page={allPages[0]} />;
+  if (step === 0)
+    right = (
+      <div className="empty-preview">
+        <p>Generated images will appear here.</p>
+      </div>
+    );
   if (step === 2)
     right = (
       <div className="studio-preview">
@@ -790,10 +818,10 @@ export default function BookEditor() {
       <BookPage project={p} page={allPages.find((x) => x.kind === "letter")!} />
     );
   if (step === 7)
-    right = p.photoMemories.length ? (
+    right = memoryPage ? (
       <BookPage
         project={p}
-        page={allPages.find((x) => x.kind === "memories")!}
+        page={allPages.find((x) => x.id === `memories-${memoryPage.id}`)!}
       />
     ) : (
       <div className="empty-preview">
@@ -1078,7 +1106,27 @@ export default function BookEditor() {
                   + Add
                 </button>
               </div>
-              <fieldset disabled={isLocked || operationBusy}>
+              <button
+                disabled={operationBusy || !character.id}
+                onClick={() => {
+                  if (
+                    !confirm(
+                      `Delete ${character.name}? This removes the character and their selection from chapters and the cover. Existing illustrations remain unchanged.`,
+                    )
+                  )
+                    return;
+                  change((current) => deleteCharacter(current, character.id));
+                  setCharacterIndex(Math.max(0, characterIndex - 1));
+                }}
+              >
+                Delete character
+              </button>
+              {!p.characters.length && (
+                <p className="help">
+                  No characters yet. Use + Add to create one.
+                </p>
+              )}
+              <fieldset disabled={isLocked || operationBusy || !character.id}>
                 <Field label="Character name">
                   <input
                     value={character.name}
@@ -1140,6 +1188,7 @@ export default function BookEditor() {
                 <button
                   disabled={
                     operationBusy ||
+                    !character.id ||
                     (!character.characterSheetImage && !isLocked)
                   }
                   onClick={() =>
@@ -1993,7 +2042,7 @@ export default function BookEditor() {
             </>
           )}
           {step === 7 && (
-            <>
+            <fieldset disabled={operationBusy}>
               <p className="section-description">
                 A little album at the end of your adventure.
               </p>
@@ -2003,6 +2052,7 @@ export default function BookEditor() {
                   onChange={(e) =>
                     change((p) => ({
                       ...p,
+                      photoMemoryPages: memoryPages(p),
                       exportSettings: {
                         ...p.exportSettings,
                         memoryLayout: +e.target.value as 1 | 2 | 4,
@@ -2015,24 +2065,71 @@ export default function BookEditor() {
                   <option value={4}>Four little memories</option>
                 </select>
               </Field>
-              <DropZone
-                images={p.photoMemories.map((x) => x.image)}
-                onChange={(ids) =>
-                  change((p) => ({
-                    ...p,
-                    photoMemories: ids.map(
-                      (id) =>
-                        p.photoMemories.find((x) => x.image === id) || {
-                          id: uid(),
-                          image: id,
-                          caption: "",
-                          position: 50,
-                        },
-                    ),
-                  }))
-                }
-              />
-              {p.photoMemories.map((photo, i) => (
+              <div
+                className="tabs"
+                role="group"
+                aria-label="Photo memory pages"
+              >
+                {memories.map((item, i) => (
+                  <button
+                    key={item.id}
+                    className={memoryPage?.id === item.id ? "selected" : ""}
+                    onClick={() => setMemoryPageIndex(i)}
+                  >
+                    Memory page {i + 1}
+                  </button>
+                ))}
+              </div>
+              <div className="actions">
+                <button
+                  onClick={() => {
+                    change((current) => ({
+                      ...current,
+                      photoMemoryPages: [
+                        ...memoryPages(current),
+                        { id: uid(), photoIds: [] },
+                      ],
+                    }));
+                    setMemoryPageIndex(memories.length);
+                  }}
+                >
+                  Add memory page
+                </button>
+                <button
+                  disabled={!memoryPage}
+                  onClick={() => {
+                    if (
+                      !memoryPage ||
+                      !confirm(
+                        "Delete this photo memory page and its photos and captions?",
+                      )
+                    )
+                      return;
+                    change((current) =>
+                      deleteMemoryPage(current, memoryPage.id),
+                    );
+                    setMemoryPageIndex(Math.max(0, memoryPageIndex - 1));
+                    setPreviewIndex(0);
+                  }}
+                >
+                  Delete memory page
+                </button>
+              </div>
+              {memoryPage ? (
+                <DropZone
+                  key={memoryPage.id}
+                  label="Memory photos"
+                  images={memoryPhotos.map((x) => x.image)}
+                  onChange={(ids) =>
+                    change((current) =>
+                      setMemoryPagePhotos(current, memoryPage.id, ids),
+                    )
+                  }
+                />
+              ) : (
+                <p className="help">Add a memory page to upload photos.</p>
+              )}
+              {memoryPhotos.map((photo, i) => (
                 <div className="memory-controls" key={photo.id}>
                   <Field label={`Memory ${i + 1} · caption`}>
                     <input
@@ -2069,7 +2166,7 @@ export default function BookEditor() {
                   </Field>
                 </div>
               ))}
-            </>
+            </fieldset>
           )}
           {step >= 8 && (
             <>
@@ -2114,6 +2211,12 @@ export default function BookEditor() {
                   className="primary wide"
                   onClick={() => {
                     go(preview.editStep);
+                    if (preview.kind === "memories")
+                      setMemoryPageIndex(
+                        memories.findIndex(
+                          (item) => `memories-${item.id}` === preview.id,
+                        ),
+                      );
                     if (preview.pageId) {
                       const ci = p.chapters.findIndex((c) =>
                         c.pages.some((s) => s.id === preview.pageId),
@@ -2191,20 +2294,21 @@ export default function BookEditor() {
           </div>
         </section>
         <section className="preview-page">
-          <div className="page-heading">
-            <span className="eyebrow">
-              {step >= 8 ? "YOUR BOOK" : "A LITTLE PREVIEW"}
-            </span>
-            <span className="small-status">8 × 8 INCHES</span>
-          </div>
+          {step !== 0 && (
+            <div className="page-heading">
+              <span className="eyebrow">
+                {step >= 8 ? "YOUR BOOK" : "A LITTLE PREVIEW"}
+              </span>
+              <span className="small-status">8 × 8 INCHES</span>
+            </div>
+          )}
           <div className="preview-wrap">{right}</div>
-          <div className="preview-caption">
-            <span>✦</span>
-            <p>
-              {isLocked
-                ? "This version is locked. Unlock it to make changes."
-                : step === 0
-                  ? "A book only your family could make."
+          {step !== 0 && (
+            <div className="preview-caption">
+              <span>✦</span>
+              <p>
+                {isLocked
+                  ? "This version is locked. Unlock it to make changes."
                   : step === 2 || step === 1
                     ? step === 2 && character.characterSheetImage
                       ? character.generationModel?.startsWith("mock")
@@ -2220,8 +2324,9 @@ export default function BookEditor() {
                             : "Saved illustration"
                         : generationLabel
                     : "Your words. Your memories. Your story."}
-            </p>
-          </div>
+              </p>
+            </div>
+          )}
           {step >= 8 && (
             <div className="preview-nav">
               <button

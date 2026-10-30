@@ -131,6 +131,7 @@ export interface BookProject {
     date: string;
     photo?: string;
   };
+  photoMemoryPages?: { id: string; photoIds: string[] }[];
   photoMemories: {
     id: string;
     image: string;
@@ -276,7 +277,15 @@ export function assertProject(value: unknown): asserts value is BookProject {
     !Array.isArray(p.characters) ||
     !Array.isArray(p.chapters) ||
     !Array.isArray(p.photoMemories) ||
-    p.characters.length === 0 ||
+    (p.photoMemoryPages !== undefined &&
+      (!Array.isArray(p.photoMemoryPages) ||
+        p.photoMemoryPages.some(
+          (page) =>
+            !page ||
+            typeof page.id !== "string" ||
+            !Array.isArray(page.photoIds) ||
+            page.photoIds.some((id) => typeof id !== "string"),
+        ))) ||
     p.chapters.length === 0 ||
     !Array.isArray(p.visualStyle.referenceImages) ||
     ![1, 2, 4].includes(p.exportSettings.memoryLayout) ||
