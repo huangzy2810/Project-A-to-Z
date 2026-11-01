@@ -8,6 +8,7 @@ import {
   restoreQueue,
   applyQueuedVersion,
   jobApprovalIssues,
+  compactQueue,
 } from "../lib/generation-queue";
 function book() {
   const project = createProject();
@@ -54,6 +55,7 @@ test("queue serializes requests, ignores duplicate pages, stops pending work, an
   );
   queue.enqueue([first, second, { ...first, id: "duplicate" }]);
   assert.equal(queue.jobs.length, 2);
+  await waitFor(() => calls.length === 1);
   assert.deepEqual(calls, [first.pageId]);
   queue.stop();
   assert.equal(second.status, "queued"); // Caller objects are not the current queue state after stop.
@@ -204,4 +206,68 @@ test("queue storage failures stop work before any paid request starts", () => {
   assert.equal(calls, 0);
   assert.equal(failures, 1);
   assert.equal(queue.jobs[0].status, "paused");
+});
+
+test("asynchronous queue saves gate paid dispatch and failures pause work", async () => {
+  const p = book();
+  let release!: () => void;
+  let calls = 0,
+    failures = 0;
+  const q = new GenerationQueue(
+    [],
+    async () => {
+      calls++;
+    },
+    () =>
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    () => {
+      failures++;
+    },
+  );
+  q.enqueue([makeChapterJob(p, p.chapters[0].pages[0])]);
+  assert.equal(calls, 0);
+  release();
+  await waitFor(() => q.jobs[0].status === "running");
+  assert.equal(calls, 0);
+  release();
+  await waitFor(() => calls === 1);
+  await waitFor(() => q.jobs[0].status === "completed");
+  release();
+  const failed = new GenerationQueue(
+    [],
+    async () => {
+      calls++;
+    },
+    async () => {
+      throw new Error("IDB full");
+    },
+    () => {
+      failures++;
+    },
+  );
+  failed.enqueue([makeChapterJob(p, p.chapters[0].pages[1])]);
+  await waitFor(() => failures === 1);
+  assert.equal(calls, 1);
+  assert.equal(failed.jobs[0].status, "paused");
+});
+
+test("completed queue persistence keeps bounded timing summaries without duplicating request recipes", () => {
+  const p = book();
+  const base = makeChapterJob(p, p.chapters[0].pages[0]);
+  const completed = Array.from({ length: 45 }, (_, i) => ({
+    ...base,
+    id: `done-${i}`,
+    status: "completed" as const,
+    durationMs: 1200 + i,
+  }));
+  const failed = { ...base, id: "failed", status: "failed" as const };
+  const compact = compactQueue([...completed, failed]);
+  assert.equal(compact.length, 31);
+  assert.equal(compact[0].durationMs, 1215);
+  assert.deepEqual(compact[0].recipe.characters, []);
+  assert.deepEqual(compact.at(-1)!.recipe, failed.recipe);
+  assert.equal(restoreQueue(JSON.stringify(compact), p.id).length, 31);
+  assert.equal(completed[0].recipe.characters.length, 1);
 });

@@ -1,3 +1,4 @@
+import { readSavedProject } from "./persistence";
 import { test, expect, type Page } from "@playwright/test";
 import sharp from "sharp";
 import {
@@ -203,9 +204,7 @@ test("whole-book shortcut requires locked-page opt-in, skips empty scenes and pr
     page.getByRole("button", { name: "Unlock Page", exact: true }),
   ).toBeVisible();
   await expect(page.getByLabel("What happens on this page?")).toBeDisabled();
-  const saved = await page.evaluate(() =>
-    JSON.parse(localStorage.getItem("ava-book-project-v3")!),
-  );
+  const saved = await readSavedProject(page);
   expect(saved.chapters[0].pages[2].lockedTypography).toEqual(book.typography);
   expect(saved.chapters[0].pages[2].illustrationVersions[0].id).toBe(
     "old-version",

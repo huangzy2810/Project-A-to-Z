@@ -40,6 +40,16 @@ test("vision adapter sends scene photos separately with complete drafting instru
       "ONLY source",
       "do not prescribe",
       "positional labels",
+      "Include explicit, editable pose-to-reference guidance in the returned scene description itself",
+      "body orientation separately from head orientation",
+      "front-facing -> front view",
+      "three-quarter -> three-quarter view",
+      "left-facing profile or right-facing profile -> side-profile view",
+      "Apply this independently to each person",
+      "do not guess identity or assign names by list order",
+      "For a back-facing person keep the face hidden",
+      "suggested staging adjustment rather than an observed photo detail",
+      "Do not claim you have inspected the approved sheets",
     ])
       assert.ok(body.instructions.includes(keyword));
     assert.match(
@@ -61,7 +71,7 @@ test("vision adapter sends scene photos separately with complete drafting instru
           content: [
             {
               type: "output_text",
-              text: "The child on the left wears a red coat and points across the river.",
+              text: "The child on the left wears a red coat and points across the river, head in a right-facing profile; use the side-profile view from this character’s own approved face sheet for likeness.",
               annotations: [],
             },
           ],
@@ -74,7 +84,9 @@ test("vision adapter sends scene photos separately with complete drafting instru
   const response = await handle(request());
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("cache-control"), "no-store");
-  assert.match((await response.json()).description, /red coat/);
+  const draft = (await response.json()).description;
+  assert.match(draft, /red coat/);
+  assert.match(draft, /right-facing profile; use the side-profile view/);
   assert.equal(calls, 1);
 });
 test("photo drafting rejects bad origins, invalid uploads, oversized inputs and invalid context before provider calls", async () => {

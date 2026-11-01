@@ -4,7 +4,7 @@ import { createProject, type GenerationRecipe } from "../../lib/model";
 import { createIllustrationHandler } from "../../lib/server/illustration-handler";
 import { createSceneDescriptionHandler } from "../../lib/server/scene-description";
 const draft =
-  "Ava wears a red coat and white shoes, standing on the left and pointing across the river. Warm sunset light falls on the stone railing, with tall buildings in the distant background.";
+  "Ava wears a red coat and white shoes, standing on the left and pointing across the river. Her body faces the river and her head is in a right-facing profile; use the side-profile view from Ava’s own approved character sheet for likeness. Warm sunset light falls on the stone railing, with tall buildings in the distant background.";
 async function setup(page: Page, text: string) {
   const book = createProject();
   book.characters[0] = {
@@ -95,6 +95,9 @@ test("photo draft is reviewable, editable and saved while scene photos never rea
         "style.png",
       ]);
       expect(prompt).toContain("Canonical identity = Image 1");
+      expect(prompt).toContain(
+        "use the side-profile view from Ava’s own approved character sheet",
+      );
       expect(prompt).not.toContain("SCENE-ONLY REFERENCE");
       return { bytes: png, model: "gpt-image-2.5-flare" };
     },
@@ -102,7 +105,11 @@ test("photo draft is reviewable, editable and saved while scene photos never rea
   await page.route("**/api/illustrations", async (route) => {
     if (route.request().method() === "GET")
       return route.fulfill({
-        json: { available: true, provider: "OpenAI", model: "gpt-image-2.5-flare" },
+        json: {
+          available: true,
+          provider: "OpenAI",
+          model: "gpt-image-2.5-flare",
+        },
       });
     const request = new Request(route.request().url(), {
       method: "POST",
@@ -164,7 +171,11 @@ test("failed analysis keeps uploads and text; retry fills an empty scene and pho
   let calls = 0;
   await page.route("**/api/illustrations", (route) =>
     route.fulfill({
-      json: { available: false, provider: "OpenAI", model: "gpt-image-2.5-flare" },
+      json: {
+        available: false,
+        provider: "OpenAI",
+        model: "gpt-image-2.5-flare",
+      },
     }),
   );
   await page.route("**/api/scene-description", (route) => {

@@ -1,3 +1,4 @@
+import { readSavedProject } from "./persistence";
 import { test, expect } from "@playwright/test";
 import { createIllustrationHandler } from "../../lib/server/illustration-handler";
 import type { GenerationRecipe } from "../../lib/model";
@@ -12,7 +13,11 @@ test("AI client sends image references, retains retries and history, and never f
   await page.route("**/api/illustrations", async (route) => {
     if (route.request().method() === "GET") {
       await route.fulfill({
-        json: { available: true, provider: "OpenAI", model: "gpt-image-2.5-flare" },
+        json: {
+          available: true,
+          provider: "OpenAI",
+          model: "gpt-image-2.5-flare",
+        },
       });
       return;
     }
@@ -195,14 +200,12 @@ test("AI client sends image references, retains retries and history, and never f
   await expect(page.locator(".versions button")).toHaveCount(5);
   await expect
     .poll(() =>
-      page.evaluate(() => {
-        const p = JSON.parse(localStorage.getItem("ava-book-project-v3")!);
-        return (
-          p.chapters[0].pages[0].illustrationVersions.at(-1).recipe
-            .characters[0].characterSheetImage ===
-          p.characters[0].characterSheetImage
-        );
-      }),
+      readSavedProject(page).then(
+        (p) =>
+          p.chapters[0].pages[0].illustrationVersions.at(-1)?.recipe
+            ?.characters[0].characterSheetImage ===
+          p.characters[0].characterSheetImage,
+      ),
     )
     .toBe(true);
 });
@@ -212,7 +215,11 @@ test("missing configuration explicitly uses samples, while configuration errors 
 }) => {
   await page.route("**/api/illustrations", (route) =>
     route.fulfill({
-      json: { available: false, provider: "OpenAI", model: "gpt-image-2.5-flare" },
+      json: {
+        available: false,
+        provider: "OpenAI",
+        model: "gpt-image-2.5-flare",
+      },
     }),
   );
   await page.goto("/");

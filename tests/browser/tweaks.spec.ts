@@ -1,3 +1,4 @@
+import { readSavedProject } from "./persistence";
 import { test, expect } from "@playwright/test";
 import sharp from "sharp";
 import { createProject } from "../../lib/model";
@@ -56,7 +57,11 @@ test("masked feedback repairs preserve unselected pixels, history, feedback and 
   await page.route("**/api/illustrations", async (route) => {
     if (route.request().method() === "GET") {
       await route.fulfill({
-        json: { available: true, provider: "OpenAI", model: "gpt-image-2.5-flare" },
+        json: {
+          available: true,
+          provider: "OpenAI",
+          model: "gpt-image-2.5-flare",
+        },
       });
       return;
     }
@@ -108,7 +113,7 @@ test("masked feedback repairs preserve unselected pixels, history, feedback and 
     }
   }, book);
   await page.goto("/");
-  await page.evaluate(async (project) => {
+  await page.evaluate(async () => {
     const c = document.createElement("canvas");
     c.width = 64;
     c.height = 64;
@@ -133,8 +138,7 @@ test("masked feedback repairs preserve unselected pixels, history, feedback and 
       transaction.onerror = () => reject(transaction.error);
     });
     db.close();
-    localStorage.setItem("ava-book-project-v3", JSON.stringify(project));
-  }, book);
+  });
   await page.reload();
   await page.getByRole("button", { name: /Chapter$/ }).click();
   await page.locator(".tweak-panel > summary").click();
@@ -171,57 +175,57 @@ test("masked feedback repairs preserve unselected pixels, history, feedback and 
   expect(maskChecked).toBe(true);
   await expect
     .poll(() =>
-      page.evaluate(
-        () =>
-          JSON.parse(localStorage.getItem("ava-book-project-v3")!).chapters[0]
-            .pages[0].illustrationVersions.length,
+      readSavedProject(page).then(
+        (p) => p.chapters[0].pages[0].illustrationVersions.length,
       ),
     )
     .toBe(2);
-  const pixels = await page.evaluate(async () => {
-    const project = JSON.parse(localStorage.getItem("ava-book-project-v3")!);
-    const versions = project.chapters[0].pages[0].illustrationVersions;
-    const db = await new Promise<IDBDatabase>((resolve) => {
-      const r = indexedDB.open("ava-book-assets-v3", 1);
-      r.onsuccess = () => resolve(r.result);
-    });
-    const read = (id: string) =>
-      new Promise<Blob>((resolve) => {
-        const r = db.transaction("assets").objectStore("assets").get(id);
+  const pixels = await page.evaluate(
+    async (project) => {
+      const versions = project.chapters[0].pages[0].illustrationVersions;
+      const db = await new Promise<IDBDatabase>((resolve) => {
+        const r = indexedDB.open("ava-book-assets-v3", 1);
         r.onsuccess = () => resolve(r.result);
       });
-    const before = await createImageBitmap(await read(versions[0].image));
-    const after = await createImageBitmap(await read(versions[1].image));
-    const canvas = document.createElement("canvas");
-    canvas.width = 64;
-    canvas.height = 64;
-    const context = canvas.getContext("2d")!;
-    context.drawImage(before, 0, 0);
-    const original = context.getImageData(0, 0, 64, 64).data;
-    context.clearRect(0, 0, 64, 64);
-    context.drawImage(after, 0, 0);
-    const edited = context.getImageData(0, 0, 64, 64).data;
-    let changed = 0;
-    for (let y = 0; y < 64; y++)
-      for (let x = 0; x < 64; x++) {
-        const inside = x >= 16 && x < 36 && y >= 16 && y < 36;
-        for (let channel = 0; channel < 4; channel++) {
-          const i = (y * 64 + x) * 4 + channel;
-          if (!inside && original[i] !== edited[i])
-            throw new Error("Unselected pixel changed");
-          if (inside && original[i] !== edited[i]) changed++;
+      const read = (id: string) =>
+        new Promise<Blob>((resolve) => {
+          const r = db.transaction("assets").objectStore("assets").get(id);
+          r.onsuccess = () => resolve(r.result);
+        });
+      const before = await createImageBitmap(await read(versions[0].image));
+      const after = await createImageBitmap(await read(versions[1].image));
+      const canvas = document.createElement("canvas");
+      canvas.width = 64;
+      canvas.height = 64;
+      const context = canvas.getContext("2d")!;
+      context.drawImage(before, 0, 0);
+      const original = context.getImageData(0, 0, 64, 64).data;
+      context.clearRect(0, 0, 64, 64);
+      context.drawImage(after, 0, 0);
+      const edited = context.getImageData(0, 0, 64, 64).data;
+      let changed = 0;
+      for (let y = 0; y < 64; y++)
+        for (let x = 0; x < 64; x++) {
+          const inside = x >= 16 && x < 36 && y >= 16 && y < 36;
+          for (let channel = 0; channel < 4; channel++) {
+            const i = (y * 64 + x) * 4 + channel;
+            if (!inside && original[i] !== edited[i])
+              throw new Error("Unselected pixel changed");
+            if (inside && original[i] !== edited[i]) changed++;
+          }
         }
-      }
-    before.close();
-    after.close();
-    db.close();
-    return {
-      changed,
-      feedback: versions[1].recipe.tweak.feedback,
-      parent: versions[1].recipe.tweak.sourceVersionId,
-      manifest: versions[1].referenceManifest[0].id,
-    };
-  });
+      before.close();
+      after.close();
+      db.close();
+      return {
+        changed,
+        feedback: versions[1].recipe!.tweak!.feedback,
+        parent: versions[1].recipe!.tweak!.sourceVersionId,
+        manifest: versions[1].referenceManifest![0].id,
+      };
+    },
+    await readSavedProject(page),
+  );
   expect(pixels.changed).toBeGreaterThan(0);
   expect(pixels.feedback).toContain("eye shape");
   expect(pixels.parent).toBe("original-version");
