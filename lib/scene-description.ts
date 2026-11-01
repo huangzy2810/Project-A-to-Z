@@ -1,8 +1,10 @@
+import type { FaceAngle } from "./model";
 import { getAsset } from "./storage";
 export const MAX_SCENE_PHOTOS = 4;
 export async function describeScenePhotos(
   photoIds: string[],
   characterNames: string[],
+  facings: { name: string; facing: FaceAngle }[] = [],
 ): Promise<string> {
   if (!photoIds.length || photoIds.length > MAX_SCENE_PHOTOS)
     throw new Error(
@@ -10,6 +12,7 @@ export async function describeScenePhotos(
     );
   const form = new FormData();
   form.set("characters", JSON.stringify(characterNames));
+  form.set("facings", JSON.stringify(facings));
   for (const id of photoIds) {
     const photo = await getAsset(id);
     if (photo.size > 8 * 1024 * 1024)

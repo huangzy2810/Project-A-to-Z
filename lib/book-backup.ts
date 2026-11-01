@@ -9,10 +9,12 @@ export function bookAssetIds(project: BookProject): string[] {
   const single = new Set([
     "image",
     "characterSheetImage",
+    "legacySheetImage",
     "primaryReferencePhoto",
     "previewImage",
     "sourceImage",
     "styleReference",
+    "frontReference",
     "photo",
   ]);
   const multiple = new Set([
@@ -22,6 +24,7 @@ export function bookAssetIds(project: BookProject): string[] {
     "characterReferences",
     "sceneReferences",
     "photoIds",
+    "previousImages",
   ]);
   function walk(value: unknown, key = "") {
     if (typeof value === "string" && (single.has(key) || multiple.has(key)))

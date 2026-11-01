@@ -13,7 +13,23 @@ const id = z.string().min(1).max(100);
 const ids = z.array(id).max(MAX_REFERENCES);
 const status = z.enum(["draft", "locked"]);
 const text = z.string().max(5000);
+const faceAngle = z.enum([
+  "front",
+  "three-quarter",
+  "left-profile",
+  "right-profile",
+]);
+const angleReference = z.object({
+  referencePhotos: ids,
+  primaryReferencePhoto: id.optional(),
+  image: id.optional(),
+  status,
+  frontReference: id.optional(),
+  styleReference: id.optional(),
+});
 const recipeSchema = z.object({
+  characterAngle: faceAngle.optional(),
+  characterFacing: z.record(id, faceAngle).optional(),
   tweak: z
     .object({
       sourceImage: id,
@@ -33,6 +49,7 @@ const recipeSchema = z.object({
     .array(
       z.object({
         id,
+        angleReferences: z.partialRecord(faceAngle, angleReference).optional(),
         name: z.string().min(1).max(120),
         relationship: z.string().max(200),
         description: text,
@@ -168,7 +185,11 @@ export function createIllustrationHandler(
           "The illustration request contains invalid or oversized story details.",
         );
       const recipe = prepareGenerationRecipe(result.data);
-      if (recipe.kind === "character") {
+      if (
+        recipe.kind === "character" ||
+        recipe.characters.some((c) => c.angleReferences) ||
+        Object.keys(recipe.characterFacing || {}).length > 0
+      ) {
         const issues = generationApprovalIssues(recipe);
         if (issues.length)
           throw new ImageGenerationError(400, issues.join(" "));

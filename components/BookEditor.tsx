@@ -1,4 +1,14 @@
 "use client";
+import { CharacterAngleStudio } from "./CharacterAngleStudio";
+import {
+  angleApproved,
+  angleReference,
+  angleRecipe,
+  withAngle,
+  FACE_ANGLES,
+  ANGLE_LABELS,
+} from "@/lib/character-angles";
+import type { FaceAngle } from "@/lib/model";
 import {
   memoryPages,
   setMemoryPagePhotos,
@@ -106,6 +116,7 @@ export default function BookEditor() {
   const [drawer, setDrawer] = useState(false);
   const [settings, setSettings] = useState(false);
   const [memoryPageIndex, setMemoryPageIndex] = useState(0);
+  const [characterAngle, setCharacterAngle] = useState<FaceAngle>("front");
   const [characterIndex, setCharacterIndex] = useState(0);
   const [chapterIndex, setChapterIndex] = useState(0);
   const [pageIndex, setPageIndex] = useState(0);
@@ -350,6 +361,7 @@ export default function BookEditor() {
       setStorageBlocked(false);
       setStep(0);
       setCharacterIndex(0);
+      setCharacterAngle("front");
       setChapterIndex(0);
       setPageIndex(0);
       setSettings(false);
@@ -390,6 +402,15 @@ export default function BookEditor() {
       referencePhotos: [],
       status: "draft",
     };
+  const usesAngles =
+    !!character.angleReferences || !character.characterSheetImage;
+  const activeAngleReference = angleReference(character, characterAngle);
+  const portraitModel = usesAngles
+    ? activeAngleReference.generationModel
+    : character.generationModel;
+  const portraitImage = usesAngles
+    ? activeAngleReference.image
+    : character.characterSheetImage;
   const memories = memoryPages(p);
   const memoryPage = memories[Math.min(memoryPageIndex, memories.length - 1)];
   const memoryPhotos = memoryPage
@@ -413,7 +434,9 @@ export default function BookEditor() {
       characters: p.characters.map((c) =>
         c.id !== character.id
           ? c
-          : c.status === "locked" && patch.status !== "draft"
+          : c.status === "locked" &&
+              patch.status !== "draft" &&
+              !patch.angleReferences
             ? c
             : { ...c, ...patch },
       ),
@@ -528,6 +551,16 @@ export default function BookEditor() {
         p.characters
           .filter((c) => page.characterIds.includes(c.id))
           .map((c) => c.name),
+        p.characters
+          .filter(
+            (c) =>
+              page.characterIds.includes(c.id) &&
+              (c.angleReferences || page.characterFacing?.[c.id]),
+          )
+          .map((c) => ({
+            name: c.name,
+            facing: page.characterFacing?.[c.id] || "front",
+          })),
       );
       change((current) => {
         const target = current.chapters
@@ -652,6 +685,57 @@ export default function BookEditor() {
       generationRef.current = false;
     }
   }
+  async function generateCharacterAngle(angle: FaceAngle) {
+    if (generationRef.current || queueActive || angleApproved(character, angle))
+      return;
+    generationRef.current = true;
+    setBusy("character");
+    setError("");
+    const characterId = character.id;
+    try {
+      const input = angleRecipe(p, character, angle);
+      const issues = generationApprovalIssues(input);
+      if (issues.length) throw new Error(issues.join(" "));
+      const service = await illustrationService(
+        p.generationMode || "auto",
+        setGenerationInfo,
+      );
+      const version = await service.generate(input);
+      change((current) => ({
+        ...current,
+        characters: current.characters.map((c) =>
+          c.id !== characterId
+            ? c
+            : withAngle(c, angle, {
+                image: version.image,
+                status: "draft",
+                previousImages: [
+                  ...(angleReference(c, angle).previousImages || []),
+                  ...(angleReference(c, angle).image
+                    ? [angleReference(c, angle).image!]
+                    : []),
+                ],
+                frontReference:
+                  angle === "front"
+                    ? undefined
+                    : c.angleReferences?.front?.image,
+                styleReference: version.styleReference,
+                generationModel: version.model,
+                generatedPrompt: version.prompt,
+              }),
+        ),
+      }));
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? e.message
+          : "Portrait generation failed. Previous portraits are safe.",
+      );
+    } finally {
+      generationRef.current = false;
+      setBusy("");
+    }
+  }
   async function tweakImage(
     feedback: string,
     region: ImageRegion,
@@ -682,6 +766,8 @@ export default function BookEditor() {
       const input: GenerationInput = {
         ...selected.recipe,
         characters,
+        characterFacing:
+          page.characterFacing || selected.recipe.characterFacing,
         tweak: {
           sourceImage: selected.image,
           sourceVersionId: selected.id,
@@ -782,7 +868,9 @@ export default function BookEditor() {
   );
   const isLocked =
     step === 2
-      ? character.status === "locked"
+      ? usesAngles
+        ? angleApproved(character, characterAngle)
+        : character.status === "locked"
       : step === 1
         ? p.visualStyle.status === "locked"
         : step === 4
@@ -798,9 +886,9 @@ export default function BookEditor() {
   if (step === 2)
     right = (
       <div className="studio-preview">
-        {character.characterSheetImage ? (
+        {portraitImage ? (
           <AssetImage
-            id={character.characterSheetImage}
+            id={portraitImage}
             alt={`${character.name} character sheet`}
           />
         ) : (
@@ -910,7 +998,7 @@ export default function BookEditor() {
       </header>
       <div className="intro">
         <span className="eyebrow">
-          AVA’S SHANGHAI ADVENTURE BOOK CREATOR · MVP v3
+          AVA’S SHANGHAI ADVENTURE BOOK CREATOR · MVP v4
         </span>
         <h1>
           {
@@ -1085,11 +1173,41 @@ export default function BookEditor() {
           {step === 2 && (
             <>
               <p className="help">
-                Generate four face-only views—front, three-quarter, profile and
-                smiling—using your locked style and photos. Clothing, bodies,
-                accessories and scenery are excluded.
+                Generate individual face-only portraits for Front,
+                Three-quarter, Left profile and Right profile, using your locked
+                visual style. Clothing, bodies, accessories and scenery are
+                excluded.
               </p>
-              {character.characterSheetImage &&
+              {!usesAngles && (
+                <button
+                  disabled={operationBusy}
+                  onClick={() => {
+                    patchCharacter({
+                      legacySheetImage: character.characterSheetImage,
+                      angleReferences: {
+                        front: {
+                          referencePhotos: [...character.referencePhotos],
+                          primaryReferencePhoto:
+                            character.primaryReferencePhoto,
+                          status: "draft",
+                        },
+                      },
+                      status: "draft",
+                    });
+                    setCharacterAngle("front");
+                  }}
+                >
+                  Set up angle references
+                </button>
+              )}
+              {!usesAngles && (
+                <p className="help">
+                  Your legacy sheet remains available until you choose the new
+                  workflow. Previously generated book pages are preserved.
+                </p>
+              )}
+              {!usesAngles &&
+                character.characterSheetImage &&
                 character.faceOnly &&
                 character.faceViews !== "multi-angle" && (
                   <p className="help">
@@ -1097,12 +1215,14 @@ export default function BookEditor() {
                     regenerate it to make a multi-angle face sheet.
                   </p>
                 )}
-              {character.characterSheetImage && !character.faceOnly && (
-                <p className="help">
-                  This older reference may contain clothing or a body. Unlock
-                  and regenerate it as a multi-angle face-only sheet.
-                </p>
-              )}
+              {!usesAngles &&
+                character.characterSheetImage &&
+                !character.faceOnly && (
+                  <p className="help">
+                    This older reference may contain clothing or a body. Unlock
+                    and regenerate it as a multi-angle face-only sheet.
+                  </p>
+                )}
               {character.characterSheetImage &&
                 character.styleReference !== p.visualStyle.previewImage && (
                   <p className="help">
@@ -1117,7 +1237,10 @@ export default function BookEditor() {
                     disabled={operationBusy}
                     key={c.id}
                     className={characterIndex === i ? "selected" : ""}
-                    onClick={() => setCharacterIndex(i)}
+                    onClick={() => {
+                      setCharacterIndex(i);
+                      setCharacterAngle("front");
+                    }}
                   >
                     {c.name}
                     {c.status === "locked" ? " ✓" : ""}
@@ -1143,6 +1266,7 @@ export default function BookEditor() {
                         ],
                       }));
                       setCharacterIndex(p.characters.length);
+                      setCharacterAngle("front");
                     }
                   }}
                 >
@@ -1160,6 +1284,7 @@ export default function BookEditor() {
                     return;
                   change((current) => deleteCharacter(current, character.id));
                   setCharacterIndex(Math.max(0, characterIndex - 1));
+                  setCharacterAngle("front");
                 }}
               >
                 Delete character
@@ -1169,7 +1294,13 @@ export default function BookEditor() {
                   No characters yet. Use + Add to create one.
                 </p>
               )}
-              <fieldset disabled={isLocked || operationBusy || !character.id}>
+              <fieldset
+                disabled={
+                  character.status === "locked" ||
+                  operationBusy ||
+                  !character.id
+                }
+              >
                 <Field label="Character name">
                   <input
                     value={character.name}
@@ -1193,54 +1324,77 @@ export default function BookEditor() {
                     rows={3}
                   />
                 </Field>
-                <p className="help">
-                  For best results, add 3–6 clear photos showing their face from
-                  different angles.
-                </p>
-                <DropZone
-                  images={character.referencePhotos}
-                  primary={character.primaryReferencePhoto}
-                  disabled={isLocked || operationBusy}
-                  onPrimary={(id) =>
-                    patchCharacter({ primaryReferencePhoto: id })
-                  }
-                  onChange={(ids) =>
-                    patchCharacter({
-                      referencePhotos: ids,
-                      primaryReferencePhoto: ids.includes(
-                        character.primaryReferencePhoto || "",
-                      )
-                        ? character.primaryReferencePhoto
-                        : ids[0],
-                    })
-                  }
-                />
+                {!usesAngles && (
+                  <>
+                    <p className="help">
+                      For best results, add 3–6 clear photos showing their face
+                      from different angles.
+                    </p>
+                    <DropZone
+                      images={character.referencePhotos}
+                      primary={character.primaryReferencePhoto}
+                      disabled={isLocked || operationBusy}
+                      onPrimary={(id) =>
+                        patchCharacter({ primaryReferencePhoto: id })
+                      }
+                      onChange={(ids) =>
+                        patchCharacter({
+                          referencePhotos: ids,
+                          primaryReferencePhoto: ids.includes(
+                            character.primaryReferencePhoto || "",
+                          )
+                            ? character.primaryReferencePhoto
+                            : ids[0],
+                        })
+                      }
+                    />
+                  </>
+                )}
               </fieldset>
-              <div className="actions">
-                <button
-                  className="primary"
-                  disabled={isLocked || operationBusy || !character.name.trim()}
-                  onClick={() => generate("character")}
-                >
-                  {busy === "character"
-                    ? "Drawing…"
-                    : character.characterSheetImage
-                      ? "Try Again"
-                      : "Generate Character"}
-                </button>
-                <button
-                  disabled={
-                    operationBusy ||
-                    !character.id ||
-                    (!character.characterSheetImage && !isLocked)
-                  }
-                  onClick={() =>
-                    patchCharacter({ status: isLocked ? "draft" : "locked" })
-                  }
-                >
-                  {isLocked ? "Unlock Character" : "Lock Character"}
-                </button>
-              </div>
+              {usesAngles ? (
+                <CharacterAngleStudio
+                  key={character.id}
+                  character={character}
+                  angle={characterAngle}
+                  onAngle={setCharacterAngle}
+                  disabled={operationBusy}
+                  generating={busy === "character"}
+                  onChange={(next) => patchCharacter(next)}
+                  onGenerate={generateCharacterAngle}
+                />
+              ) : (
+                <>
+                  <div className="actions">
+                    <button
+                      className="primary"
+                      disabled={
+                        isLocked || operationBusy || !character.name.trim()
+                      }
+                      onClick={() => generate("character")}
+                    >
+                      {busy === "character"
+                        ? "Drawing…"
+                        : character.characterSheetImage
+                          ? "Try Again"
+                          : "Generate Character"}
+                    </button>
+                    <button
+                      disabled={
+                        operationBusy ||
+                        !character.id ||
+                        (!character.characterSheetImage && !isLocked)
+                      }
+                      onClick={() =>
+                        patchCharacter({
+                          status: isLocked ? "draft" : "locked",
+                        })
+                      }
+                    >
+                      {isLocked ? "Unlock Character" : "Lock Character"}
+                    </button>
+                  </div>{" "}
+                </>
+              )}
             </>
           )}
           {step === 1 && (
@@ -1675,6 +1829,46 @@ export default function BookEditor() {
                   selectedIds={page.characterIds}
                   onChange={(characterIds) => patchPage({ characterIds })}
                 />
+                {p.characters
+                  .filter((c) => page.characterIds.includes(c.id))
+                  .map((c) => (
+                    <Field
+                      key={c.id}
+                      label={`${c.name} · facing direction`}
+                      hint={
+                        c.angleReferences
+                          ? "Uses the matching approved portrait. This choice overrides conflicting head directions in scene text."
+                          : "Legacy sheet: set up angle references in Character Studio before requesting another direction."
+                      }
+                    >
+                      <select
+                        aria-label={`${c.name} · facing direction`}
+                        value={page.characterFacing?.[c.id] || "front"}
+                        onChange={(e) =>
+                          patchPage({
+                            characterFacing: {
+                              ...page.characterFacing,
+                              [c.id]: e.target.value as FaceAngle,
+                            },
+                          })
+                        }
+                      >
+                        {FACE_ANGLES.map((angle) => (
+                          <option key={angle} value={angle}>
+                            {ANGLE_LABELS[angle]}
+                            {c.angleReferences
+                              ? angleApproved(c, angle)
+                                ? " · approved"
+                                : " · needs approval"
+                              : angle === "front"
+                                ? " · legacy sheet"
+                                : " · needs angle setup"}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                  ))}
+
                 {selected &&
                   retryIdentityIssues(selected.recipe, p.characters).length >
                     0 && (
@@ -2353,10 +2547,10 @@ export default function BookEditor() {
                 {isLocked
                   ? "This version is locked. Unlock it to make changes."
                   : step === 2 || step === 1
-                    ? step === 2 && character.characterSheetImage
-                      ? character.generationModel?.startsWith("mock")
+                    ? step === 2 && portraitImage
+                      ? portraitModel?.startsWith("mock")
                         ? "Sample illustration"
-                        : character.generationModel
+                        : portraitModel
                           ? "AI illustration"
                           : "Saved illustration"
                       : step === 1 && p.visualStyle.previewImage
@@ -2587,6 +2781,7 @@ export default function BookEditor() {
                     setChapterIndex(0);
                     setPageIndex(0);
                     setCharacterIndex(0);
+                    setCharacterAngle("front");
                   } catch (e) {
                     setError(
                       e instanceof Error

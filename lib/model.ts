@@ -11,7 +11,22 @@ export interface Typography {
   textColor: string;
   defaultTextPosition: Position;
 }
+export type FaceAngle =
+  "front" | "three-quarter" | "left-profile" | "right-profile";
+export interface AngleReference {
+  referencePhotos: string[];
+  primaryReferencePhoto?: string;
+  image?: string;
+  previousImages?: string[];
+  status: Status;
+  frontReference?: string;
+  styleReference?: string;
+  generationModel?: string;
+  generatedPrompt?: string;
+}
 export interface Character {
+  legacySheetImage?: string;
+  angleReferences?: Partial<Record<FaceAngle, AngleReference>>;
   faceOnly?: boolean;
   faceViews?: "multi-angle";
   styleReference?: string;
@@ -42,6 +57,8 @@ export interface ImageTweak {
   region: ImageRegion;
 }
 export interface GenerationRecipe {
+  characterAngle?: FaceAngle;
+  characterFacing?: Record<string, FaceAngle>;
   tweak?: ImageTweak;
   characters: Character[];
   visualStyle: VisualStyle;
@@ -71,6 +88,7 @@ export interface IllustrationVersion {
   createdAt: string;
 }
 export interface StoryPage {
+  characterFacing?: Record<string, FaceAngle>;
   scenePhotoDraft?: { description: string; photoIds: string[] };
   id: string;
   chapterId: string;
@@ -252,6 +270,48 @@ export function updatePage(
     })),
   };
 }
+function validFacing(value: unknown): boolean {
+  return (
+    value === undefined ||
+    (!!value &&
+      typeof value === "object" &&
+      !Array.isArray(value) &&
+      Object.values(value).every((angle) =>
+        ["front", "three-quarter", "left-profile", "right-profile"].includes(
+          angle as string,
+        ),
+      ))
+  );
+}
+function validAngleReferences(value: Character["angleReferences"]): boolean {
+  return (
+    value === undefined ||
+    (!!value &&
+      typeof value === "object" &&
+      !Array.isArray(value) &&
+      Object.entries(value).every(
+        ([angle, ref]) =>
+          ["front", "three-quarter", "left-profile", "right-profile"].includes(
+            angle,
+          ) &&
+          ref &&
+          Array.isArray(ref.referencePhotos) &&
+          ref.referencePhotos.every((id) => typeof id === "string") &&
+          ["draft", "locked"].includes(ref.status) &&
+          [
+            ref.image,
+            ref.frontReference,
+            ref.primaryReferencePhoto,
+            ref.styleReference,
+            ref.generationModel,
+            ref.generatedPrompt,
+          ].every((item) => item === undefined || typeof item === "string") &&
+          (ref.previousImages === undefined ||
+            (Array.isArray(ref.previousImages) &&
+              ref.previousImages.every((id) => typeof id === "string"))),
+      ))
+  );
+}
 export function assertProject(value: unknown): asserts value is BookProject {
   const p = value as BookProject;
   if (
@@ -292,6 +352,9 @@ export function assertProject(value: unknown): asserts value is BookProject {
     p.characters.some(
       (c) =>
         !c ||
+        (c.legacySheetImage !== undefined &&
+          typeof c.legacySheetImage !== "string") ||
+        !validAngleReferences(c.angleReferences) ||
         typeof c.name !== "string" ||
         typeof c.description !== "string" ||
         !Array.isArray(c.referencePhotos) ||
@@ -307,6 +370,7 @@ export function assertProject(value: unknown): asserts value is BookProject {
         c.pages.some(
           (s) =>
             !s ||
+            !validFacing(s.characterFacing) ||
             typeof s.storyText !== "string" ||
             typeof s.sceneDescription !== "string" ||
             !Array.isArray(s.characterIds) ||

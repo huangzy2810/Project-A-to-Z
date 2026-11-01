@@ -60,6 +60,14 @@ test("complete local book workflow, reload, locked pages and square PDF", async 
   await expect(page.getByAltText("Reference photo 1")).toBeVisible();
   for (const name of ["Ava", "Mama", "Papa"]) {
     await page.getByRole("button", { name, exact: true }).click();
+    if (name !== "Ava")
+      await page
+        .getByLabel("Reference photos", { exact: true })
+        .setInputFiles({
+          name: "reference.png",
+          mimeType: "image/png",
+          buffer: photo,
+        });
     await page
       .getByRole("button", { name: "Generate Character", exact: true })
       .click();

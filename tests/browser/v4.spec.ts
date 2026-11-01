@@ -1,3 +1,4 @@
+import { readSavedProject } from "./persistence";
 import { test, expect } from "@playwright/test";
 import { createProject } from "../../lib/model";
 import sharp from "sharp";
@@ -43,13 +44,7 @@ test("setup placeholder and deleting all characters preserve the book and allow 
     page.getByRole("button", { name: "Generate Character", exact: true }),
   ).toBeDisabled();
   await expect
-    .poll(() =>
-      page.evaluate(
-        () =>
-          JSON.parse(localStorage.getItem("ava-book-project-v3")!).characters
-            .length,
-      ),
-    )
+    .poll(() => readSavedProject(page).then((p) => p.characters.length))
     .toBe(0);
   await page.reload();
   await page.getByRole("button", { name: /Chapter$/ }).click();
@@ -99,12 +94,7 @@ test("photo memory pages add, preview separately, persist and delete including f
   ).toBeVisible();
   await expect
     .poll(() =>
-      page.evaluate(
-        () =>
-          JSON.parse(
-            localStorage.getItem("ava-book-project-v3") || "null",
-          )?.photoMemories.at(-1)?.caption,
-      ),
+      readSavedProject(page).then((p) => p.photoMemories.at(-1)?.caption),
     )
     .toBe("Second memory");
   await page.reload();

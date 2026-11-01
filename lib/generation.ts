@@ -112,9 +112,9 @@ export const aiIllustrationService: IllustrationService = {
       prompt: assemblePrompt(input),
       recipe: structuredClone(input),
       referenceManifest: generationReferenceManifest(input),
-      characterReferences: input.characters
-        .filter((c) => c.status === "locked")
-        .map((c) => c.characterSheetImage || c.primaryReferencePhoto || c.id),
+      characterReferences: referenceAssets(input)
+        .filter((r) => r.role === "identity")
+        .map((r) => r.id),
       styleReference:
         input.visualStyle.status === "locked"
           ? input.visualStyle.previewImage
@@ -152,9 +152,9 @@ export const mockIllustrationService: IllustrationService = {
         prompt: assemblePrompt(input),
         recipe: structuredClone(input),
         referenceManifest: generationReferenceManifest(input),
-        characterReferences: input.characters
-          .map((c) => c.characterSheetImage!)
-          .filter(Boolean),
+        characterReferences: referenceAssets(input)
+          .filter((r) => r.role === "identity")
+          .map((r) => r.id),
         styleReference: input.visualStyle.previewImage,
         sceneReferences: input.references,
         model: "mock-region-edit-v1",
@@ -220,16 +220,33 @@ export const mockIllustrationService: IllustrationService = {
       input.kind === "style"
         ? 0
         : input.kind === "character"
-          ? 4
+          ? input.characterAngle
+            ? 1
+            : 4
           : Math.max(1, input.characters.length);
     for (let n = 0; n < poses; n++) {
       const x =
-        input.kind === "character" ? 600 + (n % 2) * 1200 : 900 + n * 350;
+        input.kind === "character"
+          ? input.characterAngle
+            ? 1200
+            : 600 + (n % 2) * 1200
+          : 900 + n * 350;
       const y =
-        input.kind === "character" ? 975 + Math.floor(n / 2) * 1200 : 1660;
+        input.kind === "character"
+          ? input.characterAngle
+            ? 1800
+            : 975 + Math.floor(n / 2) * 1200
+          : 1660;
       const adult =
         input.characters[n]?.name !== "Ava" && input.kind !== "character";
-      const size = input.kind === "character" ? 5 : adult ? 1.2 : 1;
+      const size =
+        input.kind === "character"
+          ? input.characterAngle
+            ? 8
+            : 5
+          : adult
+            ? 1.2
+            : 1;
       c.save();
       c.translate(x, y);
       c.scale(size, size);
@@ -285,9 +302,9 @@ export const mockIllustrationService: IllustrationService = {
       id: uid(),
       image: await putAsset(blob),
       prompt: assemblePrompt(input),
-      characterReferences: input.characters
-        .filter((c) => c.status === "locked")
-        .map((c) => c.characterSheetImage || c.primaryReferencePhoto || c.id),
+      characterReferences: referenceAssets(input)
+        .filter((r) => r.role === "identity")
+        .map((r) => r.id),
       styleReference:
         input.visualStyle.status === "locked"
           ? input.visualStyle.previewImage

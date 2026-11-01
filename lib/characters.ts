@@ -14,6 +14,11 @@ export function deleteCharacter(project: BookProject, id: string): BookProject {
       pages: chapter.pages.map((page) => ({
         ...page,
         characterIds: page.characterIds.filter((x) => x !== id),
+        characterFacing: Object.fromEntries(
+          Object.entries(page.characterFacing || {}).filter(
+            ([key]) => key !== id,
+          ),
+        ),
       })),
     })),
   };

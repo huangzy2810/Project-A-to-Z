@@ -1,3 +1,10 @@
+import {
+  angleApproved,
+  angleIdentityIssues,
+  angleReference,
+  ANGLE_LABELS,
+  identityImage,
+} from "./character-angles";
 import type { GenerationRecipe } from "./model";
 export const MAX_REFERENCES = 16;
 export interface ReferenceAsset {
@@ -8,6 +15,33 @@ export interface ReferenceAsset {
 export function prepareGenerationRecipe(
   input: GenerationRecipe,
 ): GenerationRecipe {
+  // Keep image bindings and approvals, not portrait histories/prompts repeated per cast member.
+  input = {
+    ...input,
+    characters: input.characters.map((character) => {
+      const { generatedPrompt: _generatedPrompt, ...snapshot } = character;
+      return {
+        ...snapshot,
+        ...(character.angleReferences
+          ? {
+              angleReferences: Object.fromEntries(
+                Object.entries(character.angleReferences).map(
+                  ([angle, reference]) => {
+                    const {
+                      generatedPrompt: _prompt,
+                      generationModel: _model,
+                      previousImages: _images,
+                      ...binding
+                    } = reference!;
+                    return [angle, binding];
+                  },
+                ),
+              ),
+            }
+          : {}),
+      };
+    }),
+  };
   if (input.kind === "scene" || !input.kind)
     return { ...input, kind: "scene", references: [] };
   if (input.kind !== "style") return input;
@@ -32,7 +66,28 @@ export function referenceAssets(input: GenerationRecipe): ReferenceAsset[] {
       references.push({ id, label, role });
   };
   for (const c of input.characters.filter((c) => c.status === "locked")) {
-    if (input.kind === "character") {
+    if (input.kind === "character" && input.characterAngle) {
+      const angle = input.characterAngle;
+      const ref = angleReference(c, angle);
+      if (angle !== "front")
+        add(
+          c.angleReferences?.front?.image,
+          `${c.name}: approved Front identity anchor`,
+          "identity",
+        );
+      add(
+        ref.primaryReferencePhoto,
+        `${c.name}: primary ${ANGLE_LABELS[angle]} identity photo`,
+        "identity",
+      );
+      ref.referencePhotos.forEach((id, i) =>
+        add(
+          id,
+          `${c.name}: ${ANGLE_LABELS[angle]} identity photo ${i + 1}`,
+          "identity",
+        ),
+      );
+    } else if (input.kind === "character") {
       add(
         c.primaryReferencePhoto,
         `${c.name}: primary identity photo`,
@@ -43,11 +98,23 @@ export function referenceAssets(input: GenerationRecipe): ReferenceAsset[] {
       );
     } else {
       add(
-        c.characterSheetImage || c.primaryReferencePhoto,
-        `${c.name}: approved identity reference`,
+        identityImage(c, input.characterFacing?.[c.id]) ||
+          (!c.angleReferences ? c.primaryReferencePhoto : undefined),
+        c.angleReferences
+          ? `${c.name}: approved ${ANGLE_LABELS[input.characterFacing?.[c.id] || "front"]} portrait`
+          : `${c.name}: approved identity reference`,
         "identity",
       );
-      if (!c.characterSheetImage)
+      if (
+        c.angleReferences &&
+        (input.characterFacing?.[c.id] || "front") !== "front"
+      )
+        add(
+          c.angleReferences.front?.image,
+          `${c.name}: approved Front identity anchor (same person)`,
+          "identity",
+        );
+      if (!c.characterSheetImage && !c.angleReferences)
         c.referencePhotos.forEach((id, i) =>
           add(id, `${c.name}: identity photo ${i + 1}`, "identity"),
         );
@@ -101,13 +168,15 @@ export function assemblePrompt(input: GenerationRecipe): string {
           `Marked area: x ${Math.round(input.tweak.region.x * 100)}%, y ${Math.round(input.tweak.region.y * 100)}%, width ${Math.round(input.tweak.region.width * 100)}%, height ${Math.round(input.tweak.region.height * 100)}%. Preserve everything outside it.`,
         ]
       : []),
-    input.kind === "character"
-      ? "Create a canonical face-only identity sheet in a clean 2 × 2 grid. Show exactly four tightly cropped views of the same person: front, three-quarter, side profile, and front smiling. Keep facial identity, age, hair and skin tone identical across all four views. Show only face, natural hair and ears, cropped tightly below the chin, on a plain neutral background. No neck, shoulders, torso, full body, clothing, collars, hats, jewelry, accessories, props, scenery, additional people or labels. Extract facial identity from uploaded photos and ignore their clothing and surroundings. Facial identity takes precedence over any clothing or non-face details in the description."
-      : input.kind === "style"
-        ? "Create an uninhabited background-only sample of the requested illustration style. No people, characters, faces, silhouettes or animals, even if they appear in uploaded style references."
-        : input.kind === "cover"
-          ? "Create an inviting cover guided by the supplied photos and freeform instructions. Render only the selected cast listed below; do not add unselected characters or extra people from cover photos. If the cast is empty, create a cover without people. Cover photos guide clothing, poses, composition and setting. When approved character sheets are attached, they exclusively govern the named characters’ facial identity, hair, age and skin tone; cover photos must not replace or alter these identities. When the selected cast is empty, use cover photos for the environment and composition only; omit all people. Preserve key photo details unless the instructions request changes. Style references govern visual treatment only; do not copy people from style references. Leave quiet space in the lower third for the book title and subtitle."
-          : "Illustrate this story scene with only the requested characters.",
+    input.kind === "character" && input.characterAngle
+      ? `Create exactly one large ${ANGLE_LABELS[input.characterAngle]} face-only identity portrait, never a multi-view sheet or grid. ${input.characterAngle === "front" ? "Face directly toward the viewer with both sides of the face visible. Extract identity from the front photos; ignore their clothing and surroundings." : input.characterAngle === "three-quarter" ? "Turn the head approximately 45 degrees; both eyes remain visible. Preserve the approved front portrait's identity while using angle photos for geometry." : `The nose must point to the ${input.characterAngle === "left-profile" ? "left" : "right"} edge of the image from the viewer's perspective, in a full side profile; do not mirror facial asymmetries. Preserve the approved front identity and use the angle photos for forehead, nose, lips, chin, ear placement and hairline.`} Show only face, natural hair and ears, cropped tightly below the chin on a plain neutral background. No neck, shoulders, torso, full body, clothing, collars, hats, jewelry, accessories, props, scenery, additional people or labels. The approved front portrait governs identity; photos assigned to this angle govern pose and profile geometry. If angle photos are absent, infer the requested angle from the approved front portrait without changing the person. Use the separately approved visual style.`
+      : input.kind === "character"
+        ? "Create a canonical face-only identity sheet in a clean 2 × 2 grid. Show exactly four tightly cropped views of the same person: front, three-quarter, side profile, and front smiling. Keep facial identity, age, hair and skin tone identical across all four views. Show only face, natural hair and ears, cropped tightly below the chin, on a plain neutral background. No neck, shoulders, torso, full body, clothing, collars, hats, jewelry, accessories, props, scenery, additional people or labels. Extract facial identity from uploaded photos and ignore their clothing and surroundings. Facial identity takes precedence over any clothing or non-face details in the description."
+        : input.kind === "style"
+          ? "Create an uninhabited background-only sample of the requested illustration style. No people, characters, faces, silhouettes or animals, even if they appear in uploaded style references."
+          : input.kind === "cover"
+            ? "Create an inviting cover guided by the supplied photos and freeform instructions. Render only the selected cast listed below; do not add unselected characters or extra people from cover photos. If the cast is empty, create a cover without people. Cover photos guide clothing, poses, composition and setting. When approved character sheets are attached, they exclusively govern the named characters’ facial identity, hair, age and skin tone; cover photos must not replace or alter these identities. When the selected cast is empty, use cover photos for the environment and composition only; omit all people. Preserve key photo details unless the instructions request changes. Style references govern visual treatment only; do not copy people from style references. Leave quiet space in the lower third for the book title and subtitle."
+            : "Illustrate this story scene with only the requested characters.",
     ...input.characters.map((c) =>
       c.status === "locked"
         ? `Preserve character identity: ${c.name}, ${c.description}. Keep facial features, hairstyle, approximate age and facial proportions consistent with their attached references.`
@@ -119,10 +188,12 @@ export function assemblePrompt(input: GenerationRecipe): string {
           "CHARACTER IDENTITY CONTRACT: The approved character sheets are the source of truth for identity. Draw each selected person once unless the scene explicitly requires otherwise. Keep each face, hair, skin tone, approximate age and distinctive facial features unchanged. Never exchange identities between characters or invent substitute faces. The multiple views on a reference sheet depict one person; never reproduce the sheet’s grid or extra views in a story illustration.",
           ...input.characters.map((c, index) => {
             const canonical =
-              references.findIndex((r) => r.id === c.characterSheetImage) +
+              references.findIndex(
+                (r) => r.id === identityImage(c, input.characterFacing?.[c.id]),
+              ) +
               1 +
               offset;
-            return `Character ${index + 1}: ${c.name}. Canonical identity = Image ${canonical}. Use only the approved face's facial identity, hair and skin tone. Do not copy clothing, accessories, body poses or background elements from identity references.`;
+            return `Character ${index + 1}: ${c.name}. Canonical identity = Image ${canonical}. ${input.characterFacing?.[c.id] ? `Required head direction: ${ANGLE_LABELS[input.characterFacing[c.id]]}. This explicit facing choice takes priority over conflicting head angles in scene text. Left/right refer to the direction the nose points in the image. Match Image ${canonical} for the head angle. Any Front identity anchor depicts this same person and supports likeness only: do not copy its frontal pose or turn a requested profile toward the camera. Keep facial asymmetries rather than simply mirroring the opposite profile. ` : ""}Use only the approved face's facial identity, hair and skin tone. Do not copy clothing, accessories, body poses or background elements from identity references.`;
           }),
           "Reference hierarchy: canonical face references govern facial identity only; clothing, outfits and accessories may come from scene photographs, while explicit written scene descriptions and required elements take priority; never copy clothing from character identity images; approved style governs medium, palette and texture only; scene photographs govern backgrounds, objects, camera framing, character placement and clothing only. Never borrow faces or people from style or scene references. Verify every selected character against their assigned sheet before completing the image.",
         ]
@@ -176,9 +247,31 @@ export function generationApprovalIssues(input: GenerationRecipe): string[] {
         ? "Generate and lock a visual style before generating a character sheet."
         : "Generate and lock a visual style before illustrating a story page.",
     );
+  if (input.kind === "character" && input.characterAngle) {
+    for (const character of input.characters) {
+      if (
+        input.characterAngle === "front" &&
+        !angleReference(character, "front").referencePhotos.length
+      )
+        issues.push("Upload a Front source photo first.");
+      if (
+        input.characterAngle !== "front" &&
+        !angleApproved(character, "front")
+      )
+        issues.push(
+          "Approve the Front portrait before generating other angles.",
+        );
+    }
+  }
   for (const character of input.kind === "scene" || input.kind === "cover"
     ? input.characters
     : []) {
+    issues.push(
+      ...angleIdentityIssues(
+        character,
+        input.characterFacing?.[character.id] || "front",
+      ),
+    );
     if (character.status !== "locked" || !character.characterSheetImage)
       issues.push(
         `Generate and lock ${character.name} in Character Studio before using them on this page.`,
@@ -209,7 +302,13 @@ export function retryIdentityIssues(
       return [
         `${previous.name} no longer has an approved character sheet. Lock their character in Character Studio before regenerating.`,
       ];
+    const angle = recipe.characterFacing?.[previous.id] || "front";
+    const angleIssues = angleIdentityIssues(character, angle);
+    if (angleIssues.length) return angleIssues;
     if (
+      identityImage(character, angle) !== identityImage(previous, angle) ||
+      character.angleReferences?.front?.image !==
+        previous.angleReferences?.front?.image ||
       character.characterSheetImage !== previous.characterSheetImage ||
       character.primaryReferencePhoto !== previous.primaryReferencePhoto ||
       character.name !== previous.name ||

@@ -119,7 +119,7 @@ test("AI client sends image references, retains retries and history, and never f
   expect(requests[1].kind).toBe("character");
   expect(imageCounts[1]).toBe(3);
   expect(referenceAssets(requests[1]).map((r) => r.label)).toEqual([
-    "Ava: primary identity photo",
+    "Ava: primary Front identity photo",
     "Approved visual style sample",
     "Visual style reference 1",
   ]);
@@ -134,7 +134,7 @@ test("AI client sends image references, retains retries and history, and never f
   await expect(page.locator(".versions button")).toHaveCount(1);
   expect(imageCounts[2]).toBe(3);
   expect(referenceAssets(requests[2]).map((r) => r.label)).toEqual([
-    "Ava: approved identity reference",
+    "Ava: approved Front portrait",
     "Approved visual style sample",
     "Visual style reference 1",
   ]);

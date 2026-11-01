@@ -44,6 +44,15 @@ export function sceneRecipe(
 ): GenerationRecipe {
   return {
     kind: "scene",
+    characterFacing: Object.fromEntries(
+      project.characters
+        .filter(
+          (c) =>
+            page.characterIds.includes(c.id) &&
+            (c.angleReferences || page.characterFacing?.[c.id]),
+        )
+        .map((c) => [c.id, page.characterFacing?.[c.id] || "front"]),
+    ),
     characters: project.characters.filter((c) =>
       page.characterIds.includes(c.id),
     ),

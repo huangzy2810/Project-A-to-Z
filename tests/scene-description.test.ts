@@ -13,9 +13,11 @@ const png = Buffer.from(
 function request(
   photos: File[] = [new File([png], "scene.png", { type: "image/png" })],
   names = '["Ava"]',
+  facings: { name: string; facing: string }[] = [],
 ) {
   const form = new FormData();
   form.set("characters", names);
+  form.set("facings", JSON.stringify(facings));
   photos.forEach((photo) => form.append("photos", photo));
   return new Request("http://localhost:3000/api/scene-description", {
     method: "POST",
@@ -32,6 +34,8 @@ test("vision adapter sends scene photos separately with complete drafting instru
     assert.equal(body.model, SCENE_DESCRIPTION_MODEL);
     assert.equal(body.store, false);
     assert.equal(body.instructions, SCENE_DESCRIPTION_INSTRUCTIONS);
+    assert.match(body.input[0].content[0].text, /left-profile/);
+    assert.match(body.instructions, /Explicit facing choices take priority/);
     for (const keyword of [
       "clothing",
       "pose",
@@ -81,7 +85,9 @@ test("vision adapter sends scene photos separately with complete drafting instru
   };
   const provider = createSceneDescriptionProvider("test-only-key", transport);
   const handle = createSceneDescriptionHandler(() => provider);
-  const response = await handle(request());
+  const response = await handle(
+    request(undefined, undefined, [{ name: "Ava", facing: "left-profile" }]),
+  );
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("cache-control"), "no-store");
   const draft = (await response.json()).description;
@@ -101,6 +107,22 @@ test("photo drafting rejects bad origins, invalid uploads, oversized inputs and 
   cross.headers.set("origin", "https://other.example");
   assert.equal((await handle(cross)).status, 403);
   assert.equal((await handle(request([]))).status, 400);
+  assert.equal(
+    (
+      await handle(
+        request(undefined, undefined, [{ name: "Ava", facing: "sideways" }]),
+      )
+    ).status,
+    400,
+  );
+  assert.equal(
+    (
+      await handle(
+        request(undefined, undefined, [{ name: "Unknown", facing: "front" }]),
+      )
+    ).status,
+    400,
+  );
   assert.equal(
     (
       await handle(
