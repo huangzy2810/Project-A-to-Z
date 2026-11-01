@@ -228,19 +228,52 @@ export function restoreQueue(
         : j,
   );
 }
+// Completed request recipes are already retained with their illustration version.
+export function compactQueue(jobs: GenerationJob[]): GenerationJob[] {
+  const completed = jobs.filter((job) => job.status === "completed").slice(-30);
+  const keep = new Set(completed.map((job) => job.id));
+  return jobs
+    .filter((job) => job.status !== "completed" || keep.has(job.id))
+    .map((job) =>
+      job.status !== "completed"
+        ? job
+        : {
+            ...job,
+            recipe: {
+              kind: "scene",
+              characters: [],
+              visualStyle: {
+                description: "",
+                generatedStylePrompt: "",
+                referenceImages: [],
+                status: "draft",
+              },
+              scene:
+                "Completed — original recipe is saved with the illustration.",
+              references: [],
+              composition: "",
+              exclusions: "",
+            },
+          },
+    );
+}
 export class GenerationQueue {
   jobs: GenerationJob[];
   private running = false;
   private disposed = false;
+  private durability: Promise<void> = Promise.resolve();
+  private blocked = false;
+  private executing = false;
   constructor(
     jobs: GenerationJob[],
     private execute: (job: GenerationJob) => Promise<void>,
-    private changed: (jobs: GenerationJob[]) => void,
+    private changed: (jobs: GenerationJob[]) => void | Promise<void>,
     private fatal: (error: unknown) => void,
   ) {
     this.jobs = jobs;
   }
   enqueue(jobs: GenerationJob[]) {
+    this.blocked = false;
     for (const job of jobs)
       if (!this.jobs.some((j) => j.pageId === job.pageId && pendingJob(j)))
         this.jobs.push(job);
@@ -254,6 +287,7 @@ export class GenerationQueue {
     this.publish();
   }
   retry(id: string) {
+    this.blocked = false;
     const job = this.jobs.find((j) => j.id === id);
     if (!job || pendingJob(job) || job.status === "completed") return;
     if (this.jobs.some((j) => j.pageId === job.pageId && pendingJob(j)))
@@ -264,6 +298,7 @@ export class GenerationQueue {
     void this.pump();
   }
   resume() {
+    this.blocked = false;
     for (const job of this.jobs)
       if (
         job.status === "paused" &&
@@ -295,26 +330,40 @@ export class GenerationQueue {
     for (const job of this.jobs) job.label = labels.get(job.pageId)!;
     this.publish();
   }
+  halt(error: unknown) {
+    this.storageFailure(error);
+  }
   dispose() {
     this.disposed = true;
   }
+  private storageFailure(error: unknown) {
+    this.blocked = true;
+    this.jobs = this.jobs.map((job) =>
+      job.status === "queued"
+        ? { ...job, status: "paused" }
+        : job.status === "running" && !this.executing
+          ? {
+              ...job,
+              status: "interrupted",
+              error:
+                "Queue storage failed before dispatch. Check saved results before retrying.",
+            }
+          : job,
+    );
+    this.fatal(error);
+  }
   private publish() {
     try {
-      this.changed(structuredClone(this.jobs));
+      const saved = this.changed(structuredClone(this.jobs));
+      if (saved) {
+        // Handle rejection immediately, then gate dispatch on the ordered saves.
+        const guarded = Promise.resolve(saved).catch((error) => {
+          this.storageFailure(error);
+        });
+        this.durability = this.durability.then(() => guarded);
+      }
     } catch (error) {
-      this.jobs = this.jobs.map((job) =>
-        job.status === "queued"
-          ? { ...job, status: "paused" }
-          : job.status === "running"
-            ? {
-                ...job,
-                status: "interrupted",
-                error:
-                  "Queue storage failed. Check existing results before choosing Retry.",
-              }
-            : job,
-      );
-      this.fatal(error);
+      this.storageFailure(error);
       throw error;
     }
   }
@@ -325,12 +374,21 @@ export class GenerationQueue {
       let job: GenerationJob | undefined;
       while (
         !this.disposed &&
+        !this.blocked &&
         (job = this.jobs.find((j) => j.status === "queued"))
       ) {
+        await this.durability;
+        if (this.disposed || this.blocked) break;
+        // Stop/reconcile may have changed the queue while persistence was pending.
+        job = this.jobs.find((j) => j.status === "queued");
+        if (!job) break;
         const started = Date.now();
         job.status = "running";
         job.startedAt = new Date(started).toISOString();
         this.publish();
+        await this.durability;
+        if (this.disposed || this.blocked) break;
+        this.executing = true;
         try {
           await this.execute(structuredClone(job));
           job.status = "completed";
@@ -341,8 +399,12 @@ export class GenerationQueue {
               ? error.message
               : "Generation failed. Previous images are safe.";
         }
+        this.executing = false;
         job.durationMs = Date.now() - started;
-        if (!this.disposed) this.publish();
+        if (!this.disposed) {
+          this.publish();
+          await this.durability;
+        }
       }
     } catch {
       // publish already halted the queue and reported the storage failure.

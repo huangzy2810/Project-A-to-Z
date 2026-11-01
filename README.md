@@ -1,6 +1,6 @@
 # Ava’s Shanghai Adventure Book Creator
 
-MVP v3 of a local-first family storybook creator, built with Next.js, React and TypeScript. This branch is `mvp-v3`; `main` remains MVP v2. Real OpenAI image generation and photo-to-scene drafting are available with a server-side credential; sample artwork remains available without one. There are no accounts or cloud database. V3 uses separate browser storage (`ava-book-project-v3` and IndexedDB `ava-book-assets-v3`), so it does not read, overwrite or reset v2 books. V3 starts a separate book; automatic v2 import is not included. Continue using v2 in its original Codespace/browser URL to access its saved book.
+MVP v3 of a local-first family storybook creator, built with Next.js, React and TypeScript. This branch is `mvp-v3`; `main` remains MVP v2. Real OpenAI image generation and photo-to-scene drafting are available with a server-side credential; sample artwork remains available without one. There are no accounts or cloud database. V3 uses separate browser storage (IndexedDB `ava-book-data-v3` for book/queue metadata and `ava-book-assets-v3` for images), so it does not read, overwrite or reset v2 books. V3 starts a separate book; automatic v2 import is not included. Continue using v2 in its original Codespace/browser URL to access its saved book.
 
 ## Run locally
 
@@ -41,7 +41,7 @@ The Book Drawer and numbered progress navigation provide direct access to every 
 ## Local data architecture
 
 - `lib/model.ts`: versioned project schema, defaults and locked-page updates.
-- `lib/storage.ts`: localStorage project metadata and IndexedDB asset blobs. Photos are resized to at most 2400 pixels on their longest edge. Metadata stores opaque asset IDs, not image data.
+- `lib/storage.ts`: IndexedDB book/queue metadata and asset blobs, with verified migration of legacy localStorage records. Photos are resized to at most 2400 pixels on their longest edge. Metadata stores opaque asset IDs, not image data.
 - `lib/generation.ts`: browser-side `IllustrationService`, multipart reference upload, PNG validation/persistence and a local 2400 × 2400 canvas mock. Every page variant retains its prompt, references, generation recipe, model and source dimensions.
 - `lib/recipe.ts`: shared reference selection, ordering, deduplication and prompt assembly. Content, approved identity, visual style and composition remain separate.
 - `app/api/scene-description/route.ts`: separate vision-to-text endpoint using `gpt-4.1-mini`, up to four scene photos, bounded inputs and no automatic retries.
@@ -52,7 +52,7 @@ The Book Drawer and numbered progress navigation provide direct access to every 
 - `lib/page-export.ts`: shared PDF/JPEG page rendering and validation.
 - `lib/pdf.ts`: browser-side PDF export using the same page renderer, 2400 × 2400 rasterization, exact 576 × 576 point pages and ¼ inch text-safe areas.
 
-Meaningful edits autosave with a short debounce; pagehide flushes current metadata. Reload restores the project. Corrupted metadata is retained rather than silently replaced. The UI reports upload, storage, generation and export errors. Reset Project requires confirmation and clears local metadata and image assets.
+Meaningful edits autosave asynchronously to IndexedDB in order. The saved indicator updates only after commit; unfinished saves warn before leaving, and pagehide also attempts a final save. Wait for “Saved on this device” before closing. Reload restores the project. Corrupted metadata is retained rather than silently replaced. The UI reports upload, storage, generation and export errors. Reset Project requires confirmation and clears local metadata and image assets.
 
 Chapter generation requires a locked visual-style sample and locked character sheets for every selected character. Older locked assets are retained. To apply the new workflow to an existing book, explicitly unlock and regenerate the visual style as a background, lock it, then unlock/regenerate character sheets in that style. The editor flags older style samples and character sheets made with a different or missing style reference. Existing story pages remain unchanged until explicitly regenerated.
 
@@ -69,7 +69,7 @@ Open **Regenerate all chapter illustrations** to queue eligible pages across eve
 
 The queue panel remains visible across sections and shows waiting, generating, ready and failed jobs, plus elapsed seconds for each completed attempt (including failures). **Stop after current image** cancels waiting jobs and lets the active request finish. Failed/canceled jobs require an explicit **Retry**; a failure does not stop other valid pages. Retries use the saved job snapshot. If approvals changed, queue the page again with **Edit & Regenerate** instead.
 
-Keep the app open in one browser tab while processing. This is a browser-managed queue, not a server worker that continues after closing the app. Queue metadata is stored separately for each v3 book at `ava-book-generation-queue-v3:<book-id>`. Reload pauses waiting jobs until **Resume waiting jobs** is clicked. A request interrupted by closing/reloading is marked separately and is never automatically replayed because it may already have used API credits; inspect saved results before choosing **Retry**. Completed images remain saved with the book. Browser storage failures halt dispatch before more requests start. Reset clears the current book’s queue as well as its v3 data.
+Keep the app open in one browser tab while processing. This is a browser-managed queue, not a server worker that continues after closing the app. Queue metadata is stored separately for each v3 book under `ava-book-generation-queue-v3:<book-id>` in the IndexedDB `ava-book-data-v3` database. Dispatch waits for the queue save to commit. The last 30 completed jobs retain timing/status summaries, with their full request recipes already saved with the illustration versions; failed, paused, canceled and interrupted jobs keep their retry recipes. Reload pauses waiting jobs until **Resume waiting jobs** is clicked. A request interrupted by closing/reloading is marked separately and is never automatically replayed because it may already have used API credits; inspect saved results before choosing **Retry**. Completed images remain saved with the book. Browser storage failures halt dispatch before more requests start. Reset clears the current book’s queue as well as its v3 data.
 
 ## Export the book as JPEG pages
 
@@ -127,3 +127,11 @@ Cover recreation reuses the selected, locked Character Studio sheets for likenes
 Re-create Cover includes the same “Who appears in this scene?” checkboxes as Chapter Builder. Only checked characters are sent for cover generation, with their descriptions and approved sheets. Selected characters must be generated and locked before generating. An empty selection produces a cover without people. Existing covers retain their image history; choose the cast before generating a new version.
 
 Photo-to-scene drafts include per-person head/body orientation, gaze, and facing direction, plus a request to use the corresponding front, three-quarter, or profile view from that character’s approved multi-angle sheet. Uncertain photo identities remain positional labels for the user to assign; named characters are never guessed from list order. Suggested front/three-quarter staging is labeled as a suggestion and must preserve the intended action. The editable scene text carries this guidance into chapter illustration; drafting does not inspect or attach character sheets, and chapter illustration continues to use its existing approved references. Existing scene text is not rewritten automatically; draft from photos again and review **Use photo draft** to apply the new guidance.
+
+## Storage upgrade and editable backups
+
+MVP v3 automatically migrates the last successfully saved book and current book’s queue from localStorage to IndexedDB on the same browser URL. Each legacy record is validated, written, read back and compared before its old key is removed. Failed or invalid migrations preserve the original data and report an error. Existing image blobs stay in their original asset database; v2 data is untouched. This fixes the small localStorage quota limit, but IndexedDB still requires available device storage. Use one book tab while editing. Older builds that use localStorage will not read the migrated book; use an editable backup to safeguard it before changing versions.
+
+Open **Project settings → Download editable backup** to save a ZIP of the current editable book, settings, complete illustration history, and all referenced photos/images. **Restore editable backup** validates its contents, assigns new image IDs, and opens a new book identity without replaying generation jobs. Invalid/missing-image backups leave the open book unchanged. Restore replaces the open book after confirmation; download its backup first. Backup/restore is entirely local and does not use the image API. Restores are limited to 512 MB total and 64 MB per archive entry.
+
+Migration cannot recover edits that only exist in an older tab’s memory after a failed save. Keep that tab open until those edits are backed up or recovered. PDF/JPEG exports preserve rendered pages but cannot restore the editable project.

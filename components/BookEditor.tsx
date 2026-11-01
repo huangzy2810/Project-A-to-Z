@@ -1,4 +1,5 @@
 "use client";
+import { downloadBookBackup, readBookBackup } from "@/lib/book-backup";
 import { CharacterChoices } from "@/components/CharacterChoices";
 import ImageTweaker from "./ImageTweaker";
 import { coverRecipe, emptyCover, selectedCoverVersion } from "@/lib/cover";
@@ -15,6 +16,7 @@ import {
   makeChapterJob,
   pendingJob,
   queueStorageKey,
+  compactQueue,
   restoreQueue,
   jobApprovalIssues,
   applyQueuedVersion,
@@ -37,6 +39,9 @@ import {
   clearAssets,
   loadProject,
   PROJECT_KEY,
+  loadRecord,
+  writeRecord,
+  removeRecord,
   saveProject,
 } from "@/lib/storage";
 import {
@@ -122,121 +127,158 @@ export default function BookEditor() {
     return () => controller.abort();
   }, []);
   useEffect(() => {
-    try {
-      setProject(loadProject() || createProject());
-    } catch (e) {
-      setError(
-        e instanceof Error ? e.message : "Saved book could not be read.",
-      );
-      setStorageBlocked(true);
-    }
-    setReady(true);
+    let live = true;
+    loadProject()
+      .then((saved) => {
+        if (live) setProject(saved || createProject());
+      })
+      .catch((e) => {
+        if (live) {
+          setError(
+            e instanceof Error ? e.message : "Saved book could not be read.",
+          );
+          setStorageBlocked(true);
+        }
+      })
+      .finally(() => {
+        if (live) setReady(true);
+      });
+    return () => {
+      live = false;
+    };
   }, []);
   useEffect(() => {
     if (!project?.id) return;
     const key = queueStorageKey(project.id);
     let live = true;
-    try {
-      const restored = restoreQueue(localStorage.getItem(key), project.id);
-      const queue = new GenerationQueue(
-        restored,
-        async (job) => {
-          const current = latestProject.current;
-          if (!live || !current)
-            throw new Error("This book is no longer open.");
-          const issues = jobApprovalIssues(current, job);
-          if (issues.length) throw new Error(issues.join(" "));
-          if (generationRef.current)
-            throw new Error(
-              "Another generation is active. Retry this queued page after it finishes.",
-            );
-          generationRef.current = true;
-          try {
-            const service = await illustrationService(
-              job.mode,
-              setGenerationInfo,
-            );
-            const version = await service.generate(job.recipe);
-            if (!live || !latestProject.current)
+    let queue: GenerationQueue | undefined;
+    void (async () => {
+      try {
+        const raw = await loadRecord(key, (raw) => {
+          restoreQueue(raw, project.id);
+        });
+        const restored = restoreQueue(raw ?? null, project.id);
+        if (!live) return;
+        queue = new GenerationQueue(
+          restored,
+          async (job) => {
+            const current = latestProject.current;
+            if (!live || !current)
               throw new Error("This book is no longer open.");
-            const next = applyQueuedVersion(
-              latestProject.current,
-              job,
-              version,
-            );
-            saveProject(next);
-            latestProject.current = next;
-            setProject(next);
-          } catch (e) {
+            const issues = jobApprovalIssues(current, job);
+            if (issues.length) throw new Error(issues.join(" "));
+            if (generationRef.current)
+              throw new Error(
+                "Another generation is active. Retry this queued page after it finishes.",
+              );
+            generationRef.current = true;
+            try {
+              const service = await illustrationService(
+                job.mode,
+                setGenerationInfo,
+              );
+              const version = await service.generate(job.recipe);
+              if (!live || !latestProject.current)
+                throw new Error("This book is no longer open.");
+              const next = applyQueuedVersion(
+                latestProject.current,
+                job,
+                version,
+              );
+              latestProject.current = next;
+              setProject(next);
+              try {
+                await saveProject(next);
+              } catch (error) {
+                queueRef.current?.halt(error);
+                setSaveState("Not saved");
+                throw new Error(
+                  "The illustration finished but book saving failed. Download an editable backup and check this page before retrying; this generation may already have been charged.",
+                );
+              }
+            } catch (e) {
+              setError(
+                `${job.label}: ${e instanceof Error ? e.message : "Generation failed."}`,
+              );
+              throw e;
+            } finally {
+              generationRef.current = false;
+            }
+          },
+          (next) => {
+            if (live) setJobs(structuredClone(next));
+            return writeRecord(key, JSON.stringify(compactQueue(next)));
+          },
+          () => {
+            if (queueRef.current)
+              setJobs(structuredClone(queueRef.current.jobs));
             setError(
-              `${job.label}: ${e instanceof Error ? e.message : "Generation failed."}`,
+              "The generation queue could not be saved. Processing stopped; check browser storage before retrying.",
             );
-            throw e;
-          } finally {
-            generationRef.current = false;
-          }
-        },
-        (next) => {
-          localStorage.setItem(key, JSON.stringify(next));
-          if (live) setJobs(structuredClone(next));
-        },
-        () => {
-          if (queueRef.current) setJobs(structuredClone(queueRef.current.jobs));
+          },
+        );
+        await writeRecord(key, JSON.stringify(compactQueue(restored)));
+        if (!live) {
+          queue.dispose();
+          return;
+        }
+        queueRef.current = queue;
+        setJobs(restored);
+      } catch (e) {
+        queue?.dispose();
+        if (live) {
+          queueRef.current = null;
+          setJobs([]);
           setError(
-            "The generation queue could not be saved. Processing stopped; check browser storage before retrying.",
+            e instanceof Error
+              ? e.message
+              : "Could not open the generation queue.",
           );
-        },
-      );
-      queueRef.current = queue;
-      localStorage.setItem(key, JSON.stringify(restored));
-      setJobs(restored);
-      return () => {
-        live = false;
-        queue.dispose();
-        if (queueRef.current === queue) queueRef.current = null;
-      };
-    } catch (e) {
-      queueRef.current?.dispose();
-      queueRef.current = null;
-      setJobs([]);
-      setError(
-        e instanceof Error ? e.message : "Could not open the generation queue.",
-      );
-    }
+        }
+      }
+    })();
+    return () => {
+      live = false;
+      queue?.dispose();
+      if (queueRef.current === queue) queueRef.current = null;
+    };
   }, [project?.id]);
   useEffect(() => {
-    if (!queueActive) return;
+    if (!queueActive && saveState === "Saved on this device") return;
     const warn = (event: BeforeUnloadEvent) => {
       event.preventDefault();
       event.returnValue = "";
     };
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
-  }, [queueActive]);
+  }, [queueActive, saveState]);
   useEffect(() => {
     if (!project || !ready || storageBlocked) return;
     setSaveState("Saving…");
-    const timer = setTimeout(() => {
-      try {
-        saveProject(project);
-        setSaveState("Saved on this device");
-      } catch {
-        setSaveState("Not saved");
-        setError(
-          "Your browser could not save this book. Storage may be full or disabled. Keep this tab open until storage is available.",
-        );
-      }
-    }, 250);
-    return () => clearTimeout(timer);
+    let live = true;
+    void saveProject(project)
+      .then(() => {
+        if (live) setSaveState("Saved on this device");
+      })
+      .catch((error) => {
+        if (live) {
+          queueRef.current?.halt(error);
+          setSaveState("Not saved");
+          setError(
+            "Your browser could not save this book. Keep this tab open and download an editable backup from Project settings before retrying.",
+          );
+        }
+      });
+    return () => {
+      live = false;
+    };
   }, [project, ready, storageBlocked]);
   useEffect(() => {
     const flush = () => {
       if (latestProject.current && !storageBlocked) {
-        try {
-          saveProject(latestProject.current);
-        } catch {
-          /* The autosave banner reports storage failures. */
-        }
+        void saveProject(latestProject.current).catch(() => {
+          /* autosave banner reports failures */
+        });
       }
     };
     window.addEventListener("pagehide", flush);
@@ -293,8 +335,8 @@ export default function BookEditor() {
       return;
     try {
       await clearAssets();
-      localStorage.removeItem(PROJECT_KEY);
-      if (project) localStorage.removeItem(queueStorageKey(project.id));
+      await removeRecord(PROJECT_KEY);
+      if (project) await removeRecord(queueStorageKey(project.id));
       setProject(createProject());
       setDeletedContent(null);
       setStorageBlocked(false);
@@ -2378,6 +2420,96 @@ export default function BookEditor() {
               }}
             >
               Check illustration settings
+            </button>
+            <hr />
+            <h3>Editable book backup</h3>
+            <p>
+              Download a ZIP containing this book’s editable text, settings,
+              image history, and photos. Store it somewhere safe. PDF and JPEG
+              exports cannot restore an editable book.
+            </p>
+            <button
+              disabled={!!busy}
+              onClick={async () => {
+                setBusy("backup");
+                setError("");
+                try {
+                  await downloadBookBackup(latestProject.current!);
+                } catch (e) {
+                  setError(
+                    e instanceof Error
+                      ? e.message
+                      : "Backup failed. Keep this tab open.",
+                  );
+                } finally {
+                  setBusy("");
+                }
+              }}
+            >
+              {busy === "backup"
+                ? "Creating backup…"
+                : "Download editable backup"}
+            </button>
+            <label className="field-label">
+              Restore editable backup
+              <input
+                aria-label="Restore editable backup"
+                type="file"
+                accept=".zip,application/zip"
+                disabled={operationBusy}
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  e.target.value = "";
+                  if (
+                    !file ||
+                    !confirm(
+                      "Replace the open book with this backup? Download a backup of your current book first. Generation jobs will not be restored.",
+                    )
+                  )
+                    return;
+                  setBusy("restore");
+                  setError("");
+                  try {
+                    const restored = await readBookBackup(file);
+                    await saveProject(restored);
+                    latestProject.current = restored;
+                    setProject(restored);
+                    setStorageBlocked(false);
+                    setSaveState("Saved on this device");
+                    setDeletedContent(null);
+                    setPreviewIndex(0);
+                    setChapterIndex(0);
+                    setPageIndex(0);
+                    setCharacterIndex(0);
+                  } catch (e) {
+                    setError(
+                      e instanceof Error
+                        ? e.message
+                        : "Could not restore backup. Your current book is unchanged.",
+                    );
+                  } finally {
+                    setBusy("");
+                  }
+                }}
+              />
+            </label>
+            <button
+              disabled={!!busy}
+              onClick={async () => {
+                setSaveState("Saving…");
+                try {
+                  await saveProject(latestProject.current!);
+                  setSaveState("Saved on this device");
+                  setError("");
+                } catch {
+                  setSaveState("Not saved");
+                  setError(
+                    "Saving failed. Download an editable backup before closing this tab.",
+                  );
+                }
+              }}
+            >
+              Retry saving book
             </button>
             <button className="danger" disabled={operationBusy} onClick={reset}>
               Reset Project

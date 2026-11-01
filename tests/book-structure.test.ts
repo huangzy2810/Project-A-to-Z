@@ -114,6 +114,8 @@ test("deletion removes waiting queue jobs and relabels survivors without disrupt
     },
   );
   queue.enqueue(jobs);
+  for (let i = 0; i < 100 && calls.length === 0; i++)
+    await new Promise((resolve) => setTimeout(resolve, 5));
   const next = deleteBookPage(p, p.chapters[0].pages[1].id).project;
   queue.reconcilePages(next);
   assert.equal(queue.jobs.length, 2);
