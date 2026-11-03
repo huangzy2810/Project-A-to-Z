@@ -146,12 +146,10 @@ test("individual portraits use assigned photos, front approval gates other views
   expect(scene.characterFacing?.[character.id]).toBe("left-profile");
   expect(
     referenceAssets(scene)
-      .slice(0, 2)
+      .filter((reference) => reference.role === "identity")
       .map((r) => r.id),
-  ).toEqual([
-    character.angleReferences!["left-profile"]!.image,
-    character.angleReferences!.front!.image,
-  ]);
+  ).toEqual([character.angleReferences!["left-profile"]!.image]);
+  expect(counts.at(-1)).toBe(2); // one character portrait + style
   await expect
     .poll(() =>
       readSavedProject(page).then(

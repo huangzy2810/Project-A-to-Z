@@ -105,19 +105,6 @@ export function referenceAssets(input: GenerationRecipe): ReferenceAsset[] {
           : `${c.name}: approved identity reference`,
         "identity",
       );
-      if (
-        c.angleReferences &&
-        (input.characterFacing?.[c.id] || "front") !== "front"
-      )
-        add(
-          c.angleReferences.front?.image,
-          `${c.name}: approved Front identity anchor (same person)`,
-          "identity",
-        );
-      if (!c.characterSheetImage && !c.angleReferences)
-        c.referencePhotos.forEach((id, i) =>
-          add(id, `${c.name}: identity photo ${i + 1}`, "identity"),
-        );
     }
   }
   if (input.kind === "style" || input.visualStyle.status === "locked") {
@@ -193,7 +180,7 @@ export function assemblePrompt(input: GenerationRecipe): string {
               ) +
               1 +
               offset;
-            return `Character ${index + 1}: ${c.name}. Canonical identity = Image ${canonical}. ${input.characterFacing?.[c.id] ? `Required head direction: ${ANGLE_LABELS[input.characterFacing[c.id]]}. This explicit facing choice takes priority over conflicting head angles in scene text. Left/right refer to the direction the nose points in the image. Match Image ${canonical} for the head angle. Any Front identity anchor depicts this same person and supports likeness only: do not copy its frontal pose or turn a requested profile toward the camera. Keep facial asymmetries rather than simply mirroring the opposite profile. ` : ""}Use only the approved face's facial identity, hair and skin tone. Do not copy clothing, accessories, body poses or background elements from identity references.`;
+            return `Character ${index + 1}: ${c.name}. Canonical identity = Image ${canonical}. ${input.characterFacing?.[c.id] ? `Required head direction: ${ANGLE_LABELS[input.characterFacing[c.id]]}. This explicit facing choice takes priority over conflicting head angles in scene text. Left/right refer to the direction the nose points in the image. Match Image ${canonical} for the head angle. This is the only character reference image for ${c.name}; do not turn a requested profile toward the camera. Keep facial asymmetries rather than simply mirroring the opposite profile. ` : ""}Use only the approved face's facial identity, hair and skin tone. Do not copy clothing, accessories, body poses or background elements from identity references.`;
           }),
           "Reference hierarchy: canonical face references govern facial identity only; clothing, outfits and accessories may come from scene photographs, while explicit written scene descriptions and required elements take priority; never copy clothing from character identity images; approved style governs medium, palette and texture only; scene photographs govern backgrounds, objects, camera framing, character placement and clothing only. Never borrow faces or people from style or scene references. Verify every selected character against their assigned sheet before completing the image.",
         ]

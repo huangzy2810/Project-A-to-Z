@@ -86,7 +86,7 @@ test("angle-specific photos and approved front are attached without leaking the 
     ["raw-front", "style"],
   );
 });
-test("chapters bind each selected character to its requested approved portrait, keep front anchors and reject missing or stale angle approvals", () => {
+test("chapters bind each selected character to its requested approved portrait, submit one identity image per character and reject missing or stale angle approvals", () => {
   const p = book();
   const first = p.characters[0];
   p.characters[0] = withAngle(first, "left-profile", {
@@ -107,12 +107,7 @@ test("chapters bind each selected character to its requested approved portrait, 
   assert.deepEqual(generationApprovalIssues(recipe), []);
   assert.deepEqual(
     referenceAssets(recipe).map((r) => r.id),
-    [
-      "left-face",
-      first.angleReferences!.front!.image,
-      p.characters[1].angleReferences!.front!.image,
-      "style",
-    ],
+    ["left-face", p.characters[1].angleReferences!.front!.image, "style"],
   );
   const prompt = assemblePrompt(recipe);
   assert.match(
@@ -121,9 +116,9 @@ test("chapters bind each selected character to its requested approved portrait, 
   );
   assert.match(
     prompt,
-    /Mama\. Canonical identity = Image 3.*Required head direction: Front/,
+    /Mama\. Canonical identity = Image 2.*Required head direction: Front/,
   );
-  assert.doesNotMatch(prompt, /left-source|raw-front/);
+  assert.doesNotMatch(prompt, /left-source|raw-front|Front identity anchor/);
   const job = makeChapterJob(p, page);
   p.characters[0] = withAngle(p.characters[0], "right-profile", {
     image: "unrelated-change",
@@ -160,7 +155,11 @@ test("real upload handler retains facing fields and sends the matching portrait 
         prompt,
         /Canonical identity = Image 1.*Required head direction: Right profile/,
       );
-      assert.equal(files.length, 3);
+      assert.deepEqual(
+        files.map((file) => file.name),
+        ["profile.png", "style.png"],
+      );
+      assert.doesNotMatch(prompt, /Front identity anchor/);
       return { bytes: png, model: "test" };
     },
   }));
