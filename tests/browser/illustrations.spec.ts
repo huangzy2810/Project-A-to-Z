@@ -16,7 +16,7 @@ test("AI client sends image references, retains retries and history, and never f
         json: {
           available: true,
           provider: "OpenAI",
-          model: "gpt-image-2.6",
+          model: "gpt-image-2.6-flare",
         },
       });
       return;
@@ -38,7 +38,7 @@ test("AI client sends image references, retains retries and history, and never f
         imageCounts.push(images.length);
         return {
           bytes: Uint8Array.from(photo),
-          model: "gpt-image-2.6",
+          model: "gpt-image-2.6-flare",
         };
       },
     }));
@@ -218,7 +218,7 @@ test("missing configuration explicitly uses samples, while configuration errors 
       json: {
         available: false,
         provider: "OpenAI",
-        model: "gpt-image-2.6",
+        model: "gpt-image-2.6-flare",
       },
     }),
   );
@@ -252,7 +252,7 @@ test("automatic mode refreshes its label if the credential becomes unavailable",
       return;
     }
     await route.fulfill({
-      json: { available, provider: "OpenAI", model: "gpt-image-2.6" },
+      json: { available, provider: "OpenAI", model: "gpt-image-2.6-flare" },
     });
   });
   await page.goto("/");

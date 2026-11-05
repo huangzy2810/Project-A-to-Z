@@ -96,7 +96,7 @@ async function mockImages(page: Page) {
       maxActive = Math.max(maxActive, active);
       await new Promise<void>((resolve) => releases.push(resolve));
       active--;
-      return { bytes: png, model: "gpt-image-2.6" };
+      return { bytes: png, model: "gpt-image-2.6-flare" };
     },
   }));
   await page.route("**/api/illustrations", async (route) => {
@@ -104,7 +104,7 @@ async function mockImages(page: Page) {
       return route.fulfill({
         json: {
           available: true,
-          model: "gpt-image-2.6",
+          model: "gpt-image-2.6-flare",
           provider: "OpenAI",
         },
       });

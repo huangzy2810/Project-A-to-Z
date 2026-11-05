@@ -3,6 +3,7 @@ import {
   createOpenAIProvider,
   imageApiKey,
   IMAGE_MODEL,
+  CHARACTER_IMAGE_MODEL,
 } from "@/lib/server/image-provider";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,6 +14,12 @@ export async function GET() {
       available: Boolean(imageApiKey()),
       provider: "OpenAI",
       model: IMAGE_MODEL,
+      models: {
+        character: CHARACTER_IMAGE_MODEL,
+        scene: IMAGE_MODEL,
+        style: IMAGE_MODEL,
+        cover: IMAGE_MODEL,
+      },
     },
     { headers: { "Cache-Control": "no-store" } },
   );

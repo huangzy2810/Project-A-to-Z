@@ -7,6 +7,7 @@ import {
   createOpenAIProvider,
   ImageGenerationError,
   IMAGE_MODEL,
+  CHARACTER_IMAGE_MODEL,
 } from "../lib/server/image-provider";
 const png = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQEBAKpZfQAAAABJRU5ErkJggg==",
@@ -224,7 +225,7 @@ test("concurrent requests do not create duplicate paid generations", async () =>
   release();
   assert.equal((await first).status, 200);
 });
-test("Image adapter requests gpt-image-2.6 for generation and reference editing with no retries", async () => {
+test("Image adapter requests gpt-image-2.6-flare for generation and reference editing with no retries", async () => {
   const calls: { url: string; init?: RequestInit }[] = [];
   const transport: typeof fetch = async (input, init) => {
     if (String(input).startsWith("data:")) return fetch(input, init);
@@ -241,7 +242,7 @@ test("Image adapter requests gpt-image-2.6 for generation and reference editing 
   );
   assert.match(calls[0].url, /\/images\/generations$/);
   const body = JSON.parse(calls[0].init!.body as string);
-  assert.equal(body.model, "gpt-image-2.6");
+  assert.equal(body.model, "gpt-image-2.6-flare");
   assert.equal(body.size, "1024x1024");
   assert.equal(body.n, 1);
   assert.equal(body.output_format, "png");
@@ -256,7 +257,7 @@ test("Image adapter requests gpt-image-2.6 for generation and reference editing 
   );
   assert.match(calls[1].url, /\/images\/edits$/);
   const form = calls[1].init!.body as FormData;
-  assert.equal(form.get("model"), "gpt-image-2.6");
+  assert.equal(form.get("model"), "gpt-image-2.6-flare");
   assert.equal(form.has("input_fidelity"), false);
   assert.equal(form.get("prompt"), "Use this likeness");
   assert.equal(form.get("complexity"), "medium");
@@ -675,7 +676,7 @@ test("Reference edits omit input_fidelity when the transport rejects that parame
         },
         { status: 400 },
       );
-    assert.equal(form.get("model"), "gpt-image-2.6");
+    assert.equal(form.get("model"), "gpt-image-2.6-flare");
     assert.equal(form.get("size"), "1024x1024");
     assert.equal(form.get("quality"), "high");
     assert.ok(form.get("image[]") instanceof File);
@@ -715,7 +716,7 @@ test("HTTP 400 diagnostics distinguish model, settings, image and moderation wit
       {
         param: "model",
         code: "model_not_found",
-        expected: /configured image model.*gpt-image-2.6/,
+        expected: /configured image model.*gpt-image-2.6-flare/,
       },
       {
         param: "image[0]",
@@ -833,12 +834,17 @@ test("chapter API sends selected character descriptions to the image provider al
 });
 
 test("validated request kinds reach OpenAI with Character Studio high complexity and chapters medium, independently of high quality", async () => {
-  const received: { complexity: unknown; quality: unknown; prompt: string }[] =
-    [];
+  const received: {
+    model: unknown;
+    complexity: unknown;
+    quality: unknown;
+    prompt: string;
+  }[] = [];
   const transport: typeof fetch = async (url, init) => {
     if (String(url).startsWith("data:")) return fetch(url, init);
     if (init!.body instanceof FormData) {
       received.push({
+        model: init!.body.get("model"),
         complexity: init!.body.get("complexity"),
         quality: init!.body.get("quality"),
         prompt: init!.body.get("prompt") as string,
@@ -846,6 +852,7 @@ test("validated request kinds reach OpenAI with Character Studio high complexity
     } else {
       const body = JSON.parse(init!.body as string);
       received.push({
+        model: body.model,
         complexity: body.complexity ?? null,
         quality: body.quality,
         prompt: body.prompt,
@@ -889,6 +896,11 @@ test("validated request kinds reach OpenAI with Character Studio high complexity
       sent.complexity,
       kind === "character" ? "high" : kind === "scene" ? "medium" : null,
     );
+    assert.equal(
+      sent.model,
+      kind === "character" ? CHARACTER_IMAGE_MODEL : IMAGE_MODEL,
+    );
+    assert.equal(response.headers.get("x-illustration-model"), sent.model);
     assert.equal(sent.quality, "high");
     if (kind === "scene") {
       assert.match(sent.prompt, /Ava\. Canonical identity = Image 1/);
@@ -899,4 +911,39 @@ test("validated request kinds reach OpenAI with Character Studio high complexity
       assert.ok(sent.prompt.includes(input.characters[0].description));
     }
   }
+});
+
+test("model rejection identifies the requested Sunburst variant and does not silently retry another model", async () => {
+  let calls = 0;
+  const provider = createOpenAIProvider(
+    "test-only-credential",
+    async (_url, init) => {
+      calls++;
+      const body = JSON.parse(init!.body as string);
+      assert.equal(body.model, CHARACTER_IMAGE_MODEL);
+      return Response.json(
+        {
+          error: {
+            message: "Untrusted upstream detail",
+            type: "invalid_request_error",
+            param: "model",
+            code: "model_not_found",
+          },
+        },
+        { status: 400 },
+      );
+    },
+  );
+  await assert.rejects(
+    provider.generate(
+      "A face",
+      [],
+      new AbortController().signal,
+      undefined,
+      "high",
+      CHARACTER_IMAGE_MODEL,
+    ),
+    /configured image model \(gpt-image-2\.6-sunburst\)/,
+  );
+  assert.equal(calls, 1);
 });

@@ -99,7 +99,7 @@ test("photo draft is reviewable, editable and saved while scene photos never rea
         "use the side-profile view from Ava’s own approved character sheet",
       );
       expect(prompt).not.toContain("SCENE-ONLY REFERENCE");
-      return { bytes: png, model: "gpt-image-2.6" };
+      return { bytes: png, model: "gpt-image-2.6-flare" };
     },
   }));
   await page.route("**/api/illustrations", async (route) => {
@@ -108,7 +108,7 @@ test("photo draft is reviewable, editable and saved while scene photos never rea
         json: {
           available: true,
           provider: "OpenAI",
-          model: "gpt-image-2.6",
+          model: "gpt-image-2.6-flare",
         },
       });
     const request = new Request(route.request().url(), {
@@ -174,7 +174,7 @@ test("failed analysis keeps uploads and text; retry fills an empty scene and pho
       json: {
         available: false,
         provider: "OpenAI",
-        model: "gpt-image-2.6",
+        model: "gpt-image-2.6-flare",
       },
     }),
   );

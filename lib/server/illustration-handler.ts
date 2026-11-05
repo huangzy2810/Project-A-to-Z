@@ -8,7 +8,12 @@ import {
   prepareGenerationRecipe,
   generationApprovalIssues,
 } from "../recipe";
-import { ImageGenerationError, type ImageProvider } from "./image-provider";
+import {
+  ImageGenerationError,
+  IMAGE_MODEL,
+  CHARACTER_IMAGE_MODEL,
+  type ImageProvider,
+} from "./image-provider";
 const id = z.string().min(1).max(100);
 const ids = z.array(id).max(MAX_REFERENCES);
 const status = z.enum(["draft", "locked"]);
@@ -240,6 +245,7 @@ export function createIllustrationHandler(
         signal,
         mask,
         complexity,
+        recipe.kind === "character" ? CHARACTER_IMAGE_MODEL : IMAGE_MODEL,
       );
       return new Response(
         new Blob([Uint8Array.from(illustration.bytes)], { type: "image/png" }),

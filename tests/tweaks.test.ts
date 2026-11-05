@@ -169,7 +169,7 @@ test("official SDK sends mask alongside original via multipart editing", async (
     "medium",
   );
   assert.ok(form);
-  assert.equal(form.get("model"), "gpt-image-2.6");
+  assert.equal(form.get("model"), "gpt-image-2.6-flare");
   assert.equal(form.get("complexity"), "medium");
   assert.equal(form.get("quality"), "high");
   assert.ok(form.get("mask") instanceof File);

@@ -60,7 +60,7 @@ test("masked feedback repairs preserve unselected pixels, history, feedback and 
         json: {
           available: true,
           provider: "OpenAI",
-          model: "gpt-image-2.6",
+          model: "gpt-image-2.6-flare",
         },
       });
       return;
@@ -90,7 +90,7 @@ test("masked feedback repairs preserve unselected pixels, history, feedback and 
         expect(data[(24 * 64 + 24) * 4 + 3]).toBe(0);
         expect(data[3]).toBe(255);
         maskChecked = true;
-        return { bytes: Uint8Array.from(red), model: "gpt-image-2.6" };
+        return { bytes: Uint8Array.from(red), model: "gpt-image-2.6-flare" };
       },
     }));
     const response = await handler(
