@@ -85,8 +85,49 @@ export function referenceAssets(input: GenerationRecipe): ReferenceAsset[] {
   );
   return references;
 }
+function assembleChapterPrompt(input: GenerationRecipe): string {
+  const references = referenceAssets(input);
+  const offset = input.tweak ? 1 : 0;
+  const cast =
+    input.characters.map((c) => c.name).join(", ") || "none (background only)";
+  return [
+    input.tweak
+      ? "Repair Image 1 only inside the transparent area of the supplied mask. Return the complete illustration at the same square framing; preserve composition, lighting, story meaning and visual style outside that area."
+      : "Create one square children’s storybook illustration. Story text is added separately.",
+    `Selected cast: ${cast}.`,
+    ...(input.tweak
+      ? [
+          `Requested local change: ${input.tweak.feedback}`,
+          `Marked area: x ${Math.round(input.tweak.region.x * 100)}%, y ${Math.round(input.tweak.region.y * 100)}%, width ${Math.round(input.tweak.region.width * 100)}%, height ${Math.round(input.tweak.region.height * 100)}%.`,
+        ]
+      : []),
+    "Reference hierarchy (CHARACTER IDENTITY CONTRACT): Approved identity images govern facial features, proportions, hair, skin tone, age and distinctive marks; preserve these even when written descriptions or styling conflict. Never exchange identities or invent substitute faces. Multiple views on one sheet depict one person, not extra characters. Do not copy clothing, accessories, body poses or backgrounds from identity references. The written scene and required elements govern outfits, actions, head/body orientation, gaze, placement and setting; use the corresponding view of each person's own sheet. Style images govern medium, palette, texture and linework only, never identity; ignore people or cast shown in style references.",
+    ...input.characters.map((c, index) => {
+      const reference = c.characterSheetImage || c.primaryReferencePhoto;
+      const imageIndex = references.findIndex((r) => r.id === reference);
+      const binding =
+        imageIndex >= 0
+          ? `Canonical identity = Image ${imageIndex + 1 + offset}`
+          : "No approved identity image attached";
+      return `Character ${index + 1}: ${c.name}. ${binding}. What makes them, them?: ${c.description}`;
+    }),
+    `Visual style: ${input.visualStyle.description}${input.visualStyle.status === "locked" ? " Match the approved style sample across the illustration." : ""}`,
+    `Scene: ${input.scene}`,
+    `Composition: ${input.composition || "Leave generous negative space at the bottom for story text."}`,
+    `Required elements: ${input.requiredElements || "none"}`,
+    "Reference images are attached in exactly this order:",
+    ...(input.tweak
+      ? [
+          "Image 1: Original illustration to repair. The mask applies to this image only.",
+        ]
+      : []),
+    ...references.map((r, i) => `Image ${i + 1 + offset}: ${r.label}.`),
+    `Exclude: text, lettering, watermarks, extra limbs, unselected characters, unintended duplicate characters, reference-sheet grids or panels, ${input.exclusions || "unrelated foreground objects"}.`,
+  ].join("\n");
+}
 export function assemblePrompt(input: GenerationRecipe): string {
   input = prepareGenerationRecipe(input);
+  if (input.kind === "scene") return assembleChapterPrompt(input);
   const references = referenceAssets(input);
   const offset = input.tweak ? 1 : 0;
   return [
@@ -113,8 +154,7 @@ export function assemblePrompt(input: GenerationRecipe): string {
         ? `Preserve character identity: ${c.name}, ${c.description}. Keep facial features, hairstyle, approximate age and facial proportions consistent with their attached references.`
         : `Character: ${c.name}, ${c.description}.`,
     ),
-    ...(input.kind === "scene" ||
-    (input.kind === "cover" && input.characters.length > 0)
+    ...(input.kind === "cover" && input.characters.length > 0
       ? [
           "CHARACTER IDENTITY CONTRACT: The approved character sheets are the source of truth for identity. Draw each selected person once unless the scene explicitly requires otherwise. Keep each face, hair, skin tone, approximate age and distinctive facial features unchanged. Never exchange identities between characters or invent substitute faces. The multiple views on a reference sheet depict one person; never reproduce the sheet’s grid or extra views in a story illustration.",
           ...input.characters.map((c, index) => {

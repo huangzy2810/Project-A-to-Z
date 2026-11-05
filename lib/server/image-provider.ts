@@ -2,12 +2,14 @@
 import OpenAI from "openai";
 import { EnvHttpProxyAgent, fetch as proxyFetch } from "undici";
 export const IMAGE_MODEL = "gpt-image-2.6";
+export type ImageComplexity = "high" | "medium";
 export interface ImageProvider {
   generate(
     prompt: string,
     references: File[],
     signal: AbortSignal,
     mask?: File,
+    complexity?: ImageComplexity,
   ): Promise<{ bytes: Uint8Array; model: string }>;
 }
 export class ImageGenerationError extends Error {
@@ -47,6 +49,7 @@ const imageParameters = new Set([
   "size",
   "quality",
   "input_fidelity",
+  "complexity",
   "output_format",
   "output_compression",
   "background",
@@ -149,7 +152,7 @@ export function createOpenAIProvider(
 ): ImageProvider {
   const client = createOpenAIClient(apiKey, transport);
   return {
-    async generate(prompt, references, signal, mask) {
+    async generate(prompt, references, signal, mask, complexity) {
       try {
         const options = {
           model: IMAGE_MODEL,
@@ -157,6 +160,8 @@ export function createOpenAIProvider(
           n: 1 as const,
           size: "1024x1024" as const,
           quality: "high" as const,
+          // The installed SDK predates this field; its request serializer forwards it.
+          ...(complexity ? { complexity } : {}),
           output_format: "png" as const,
         };
         const result = references.length

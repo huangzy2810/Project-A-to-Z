@@ -66,7 +66,7 @@ test("references have explicit roles, deduplicate and preserve identity-first or
   assert.match(prompt, /Image 1: Ava: approved identity reference/);
   assert.doesNotMatch(prompt, /Scene reference/);
   assert.doesNotMatch(prompt, /identity reference.*Mama/);
-  assert.match(prompt, /Character: Mama/);
+  assert.match(prompt, /Character 2: Mama/);
   assert.match(prompt, /no|Exclude/);
 });
 test("character sheets use primary and uploaded photos instead of stale sheet", () => {
@@ -232,23 +232,35 @@ test("Image adapter requests gpt-image-2.6 for generation and reference editing 
     return Response.json({ data: [{ b64_json: png.toString("base64") }] });
   };
   const provider = createOpenAIProvider("test-only-credential", transport);
-  await provider.generate("Draw a storybook", [], new AbortController().signal);
+  await provider.generate(
+    "Draw a storybook",
+    [],
+    new AbortController().signal,
+    undefined,
+    "high",
+  );
   assert.match(calls[0].url, /\/images\/generations$/);
   const body = JSON.parse(calls[0].init!.body as string);
   assert.equal(body.model, "gpt-image-2.6");
   assert.equal(body.size, "1024x1024");
   assert.equal(body.n, 1);
   assert.equal(body.output_format, "png");
+  assert.equal(body.complexity, "high");
+  assert.equal(body.quality, "high");
   await provider.generate(
     "Use this likeness",
     [new File([png], "reference.png", { type: "image/png" })],
     new AbortController().signal,
+    undefined,
+    "medium",
   );
   assert.match(calls[1].url, /\/images\/edits$/);
   const form = calls[1].init!.body as FormData;
   assert.equal(form.get("model"), "gpt-image-2.6");
   assert.equal(form.has("input_fidelity"), false);
   assert.equal(form.get("prompt"), "Use this likeness");
+  assert.equal(form.get("complexity"), "medium");
+  assert.equal(form.get("quality"), "high");
   assert.equal(
     Array.from(form.values()).filter((v) => v instanceof File).length,
     1,
@@ -366,7 +378,10 @@ test("chapter approval checks prevent silent omission of character and style ass
     referenceAssets(approved).map((r) => r.id),
     ["ava-sheet", "approved-style"],
   );
-  assert.match(assemblePrompt(approved), /Approved style takes precedence/);
+  assert.match(
+    assemblePrompt(approved),
+    /Style images govern medium, palette, texture and linework only, never identity/,
+  );
   const snapshot = structuredClone(approved);
   approved.visualStyle.previewImage = "new-style";
   approved.characters[0].characterSheetImage = "new-sheet";
@@ -556,7 +571,7 @@ test("character portraits exclude clothing and chapter identity references never
   );
   assert.match(
     assemblePrompt(scene),
-    /outfits and accessories may come from scene photographs/,
+    /written scene and required elements govern outfits/,
   );
 });
 
@@ -593,7 +608,7 @@ test("scene photos never enter generation manifests or prompts, including legacy
   const prompt = assemblePrompt(input);
   assert.doesNotMatch(
     prompt,
-    /SCENE-ONLY REFERENCE|Scene reference|chapter-photo|page-photo/,
+    /SCENE-ONLY REFERENCE|Scene reference|scene photographs|scene images|chapter-photo|page-photo/,
   );
   assert.match(prompt, /Canonical identity = Image 1/);
   assert.match(prompt, /CHARACTER IDENTITY CONTRACT/);
@@ -791,14 +806,10 @@ test("chapter API sends selected character descriptions to the image provider al
     async generate(prompt, images) {
       calls++;
       for (const c of selected)
-        assert.ok(
-          prompt.includes(
-            `Preserve character identity: ${c.name}, ${c.description}`,
-          ),
-        );
+        assert.ok(prompt.includes(`What makes them, them?: ${c.description}`));
       assert.match(prompt, /Ava\. Canonical identity = Image 1/);
       assert.match(prompt, /Mama\. Canonical identity = Image 2/);
-      assert.doesNotMatch(prompt, /Preserve character identity: Papa/);
+      assert.doesNotMatch(prompt, /Character \d+: Papa/);
       assert.equal(images.length, 3);
       return { bytes: png, model: IMAGE_MODEL };
     },
@@ -819,4 +830,73 @@ test("chapter API sends selected character descriptions to the image provider al
   });
   assert.ok(repair.includes(selected[0].description));
   assert.match(repair, /Canonical identity = Image 2/);
+});
+
+test("validated request kinds reach OpenAI with Character Studio high complexity and chapters medium, independently of high quality", async () => {
+  const received: { complexity: unknown; quality: unknown; prompt: string }[] =
+    [];
+  const transport: typeof fetch = async (url, init) => {
+    if (String(url).startsWith("data:")) return fetch(url, init);
+    if (init!.body instanceof FormData) {
+      received.push({
+        complexity: init!.body.get("complexity"),
+        quality: init!.body.get("quality"),
+        prompt: init!.body.get("prompt") as string,
+      });
+    } else {
+      const body = JSON.parse(init!.body as string);
+      received.push({
+        complexity: body.complexity ?? null,
+        quality: body.quality,
+        prompt: body.prompt,
+      });
+    }
+    return Response.json({ data: [{ b64_json: png.toString("base64") }] });
+  };
+  const provider = createOpenAIProvider("test-only-credential", transport);
+  const handle = createIllustrationHandler(() => provider);
+  const p = createProject();
+  for (const kind of ["character", "scene", "style", "cover"] as const) {
+    const input: GenerationRecipe = {
+      ...recipe(),
+      kind,
+      scene: "Ava waves beside the river.",
+      characters:
+        kind === "style"
+          ? []
+          : [
+              {
+                ...p.characters[0],
+                status: "locked",
+                characterSheetImage: "sheet",
+                primaryReferencePhoto: "photo",
+                referencePhotos: ["photo"],
+              },
+            ],
+      visualStyle: {
+        ...p.visualStyle,
+        status: "locked",
+        previewImage: "style",
+      },
+    };
+    const files = referenceAssets(input).map(
+      (ref) => new File([png], `${ref.id}.png`, { type: "image/png" }),
+    );
+    const response = await handle(request(input, files));
+    assert.equal(response.status, 200, await response.text());
+    const sent = received.at(-1)!;
+    assert.equal(
+      sent.complexity,
+      kind === "character" ? "high" : kind === "scene" ? "medium" : null,
+    );
+    assert.equal(sent.quality, "high");
+    if (kind === "scene") {
+      assert.match(sent.prompt, /Ava\. Canonical identity = Image 1/);
+      assert.doesNotMatch(
+        sent.prompt,
+        /scene photographs|scene images|Approved style takes precedence/,
+      );
+      assert.ok(sent.prompt.includes(input.characters[0].description));
+    }
+  }
 });

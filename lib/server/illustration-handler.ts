@@ -228,11 +228,18 @@ export function createIllustrationHandler(
           400,
           "These story and character details are too long. Shorten them before generating.",
         );
+      const complexity =
+        recipe.kind === "character"
+          ? "high"
+          : recipe.kind === "scene"
+            ? "medium"
+            : undefined;
       const illustration = await provider.generate(
         prompt,
         images,
         signal,
         mask,
+        complexity,
       );
       return new Response(
         new Blob([Uint8Array.from(illustration.bytes)], { type: "image/png" }),
