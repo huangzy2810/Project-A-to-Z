@@ -224,7 +224,7 @@ test("concurrent requests do not create duplicate paid generations", async () =>
   release();
   assert.equal((await first).status, 200);
 });
-test("Flare adapter uses generation or multipart editing without legacy fidelity and with no retries", async () => {
+test("Image adapter requests gpt-image-2.6 for generation and reference editing with no retries", async () => {
   const calls: { url: string; init?: RequestInit }[] = [];
   const transport: typeof fetch = async (input, init) => {
     if (String(input).startsWith("data:")) return fetch(input, init);
@@ -235,7 +235,7 @@ test("Flare adapter uses generation or multipart editing without legacy fidelity
   await provider.generate("Draw a storybook", [], new AbortController().signal);
   assert.match(calls[0].url, /\/images\/generations$/);
   const body = JSON.parse(calls[0].init!.body as string);
-  assert.equal(body.model, "gpt-image-2.5-flare");
+  assert.equal(body.model, "gpt-image-2.6");
   assert.equal(body.size, "1024x1024");
   assert.equal(body.n, 1);
   assert.equal(body.output_format, "png");
@@ -246,7 +246,7 @@ test("Flare adapter uses generation or multipart editing without legacy fidelity
   );
   assert.match(calls[1].url, /\/images\/edits$/);
   const form = calls[1].init!.body as FormData;
-  assert.equal(form.get("model"), "gpt-image-2.5-flare");
+  assert.equal(form.get("model"), "gpt-image-2.6");
   assert.equal(form.has("input_fidelity"), false);
   assert.equal(form.get("prompt"), "Use this likeness");
   assert.equal(
@@ -643,7 +643,7 @@ test("scene photos never enter generation manifests or prompts, including legacy
   assert.equal(calls, 1);
 });
 
-test("Flare reference edits succeed against an API that rejects legacy input_fidelity", async () => {
+test("Reference edits omit input_fidelity when the transport rejects that parameter", async () => {
   let calls = 0;
   const transport: typeof fetch = async (_url, init) => {
     if (String(_url).startsWith("data:")) return fetch(_url, init);
@@ -660,7 +660,7 @@ test("Flare reference edits succeed against an API that rejects legacy input_fid
         },
         { status: 400 },
       );
-    assert.equal(form.get("model"), "gpt-image-2.5-flare");
+    assert.equal(form.get("model"), "gpt-image-2.6");
     assert.equal(form.get("size"), "1024x1024");
     assert.equal(form.get("quality"), "high");
     assert.ok(form.get("image[]") instanceof File);
@@ -700,7 +700,7 @@ test("HTTP 400 diagnostics distinguish model, settings, image and moderation wit
       {
         param: "model",
         code: "model_not_found",
-        expected: /configured image model.*gpt-image-2.5-flare/,
+        expected: /configured image model.*gpt-image-2.6/,
       },
       {
         param: "image[0]",

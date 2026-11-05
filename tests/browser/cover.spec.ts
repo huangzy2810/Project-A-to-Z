@@ -17,7 +17,7 @@ test("cover step follows closing letter, accepts photos/text, preserves versions
     async generate(prompt, images) {
       expect(prompt).toContain("front-cover illustration");
       counts.push(images.length);
-      return { bytes: png, model: "gpt-image-2.5-flare" };
+      return { bytes: png, model: "gpt-image-2.6" };
     },
   }));
   let failNext = false;
@@ -26,7 +26,7 @@ test("cover step follows closing letter, accepts photos/text, preserves versions
       return route.fulfill({
         json: {
           available: true,
-          model: "gpt-image-2.5-flare",
+          model: "gpt-image-2.6",
           provider: "OpenAI",
         },
       });

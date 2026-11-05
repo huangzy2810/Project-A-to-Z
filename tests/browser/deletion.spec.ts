@@ -75,7 +75,7 @@ test("page and chapter deletion confirm, undo safely, renumber, and persist acro
     route.fulfill({
       json: {
         available: false,
-        model: "gpt-image-2.5-flare",
+        model: "gpt-image-2.6",
         provider: "OpenAI",
       },
     }),
@@ -163,7 +163,7 @@ test("deleting a waiting page removes its queued job while running pages and cha
       return route.fulfill({
         json: {
           available: true,
-          model: "gpt-image-2.5-flare",
+          model: "gpt-image-2.6",
           provider: "OpenAI",
         },
       });

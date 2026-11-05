@@ -9,7 +9,7 @@ async function seed(page: Page, project: BookProject) {
       json: {
         available: false,
         provider: "OpenAI",
-        model: "gpt-image-2.5-flare",
+        model: "gpt-image-2.6",
       },
     }),
   );
